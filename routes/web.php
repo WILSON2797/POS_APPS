@@ -7,6 +7,7 @@ use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\POSController;
+use App\Http\Controllers\SettingController;
 use Illuminate\Support\Facades\Route;
 
 // Guest routes
@@ -33,5 +34,8 @@ Route::middleware('auth')->group(function () {
         Route::resource('categories', CategoryController::class)->except('show', 'create', 'edit');
         Route::resource('suppliers', SupplierController::class)->except('show', 'create', 'edit');
         Route::resource('products', ProductController::class)->except('show', 'create', 'edit');
+        Route::get('/settings/logo', [SettingController::class, 'logo'])->name('settings.logo');
+        Route::post('/settings/upload-logo', [SettingController::class, 'uploadLogo'])->name('settings.upload-logo');
+        Route::post('/settings/reset-logo', [SettingController::class, 'resetLogo'])->name('settings.reset-logo');
     });
 });

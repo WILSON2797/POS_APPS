@@ -39,4 +39,14 @@ export default [
     to: '/customers',
     icon: 'cil-people',
   },
+  {
+    component: 'CNavTitle',
+    name: 'Pengaturan',
+  },
+  {
+    component: 'CNavItem',
+    name: 'Upload Logo',
+    to: '/settings/logo',
+    icon: 'cil-settings',
+  },
 ]

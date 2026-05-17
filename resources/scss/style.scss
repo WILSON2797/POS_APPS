@@ -93,6 +93,7 @@ body {
   .product-title-line {
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
     height: 36px;
@@ -353,4 +354,76 @@ body {
     }
   }
 }
+
+/* ==========================================================================
+   Premium Sidebar Navigation Styles (No Underlines, Active States, Feather Icons)
+   ========================================================================== */
+.sidebar {
+  .nav-link,
+  .nav-group-toggle,
+  .nav-item a,
+  a {
+    text-decoration: none !important; /* Strictly no underlines on menu items */
+  }
+
+  .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-weight: 500;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    border-left: 4px solid transparent;
+
+    &:hover {
+      background-color: rgba(255, 255, 255, 0.04) !important;
+      border-left-color: rgba(255, 255, 255, 0.25);
+    }
+
+    /* Modern high-end active state styled for premium POS feel */
+    &.active {
+      background: linear-gradient(90deg, rgba(59, 130, 246, 0.2) 0%, rgba(59, 130, 246, 0.02) 100%) !important;
+      border-left: 4px solid #3b82f6 !important;
+      color: #3b82f6 !important;
+      font-weight: 700 !important;
+      box-shadow: inset 2px 0 8px rgba(59, 130, 246, 0.1);
+
+      /* Highlight the custom Feather Icon stroke color when active */
+      svg.feather-nav-icon {
+        stroke: #3b82f6 !important;
+        filter: drop-shadow(0 0 2px rgba(59, 130, 246, 0.4));
+      }
+    }
+  }
+
+  /* Feather Nav Icon alignments */
+  svg.feather-nav-icon {
+    width: 18px;
+    height: 18px;
+    stroke: rgba(255, 255, 255, 0.6);
+    stroke-width: 2px;
+    transition: stroke 0.25s ease, filter 0.25s ease;
+  }
+
+  /* When sidebar is expanded */
+  img.sidebar-brand-full {
+    display: inline-block !important;
+  }
+  img.sidebar-brand-narrow {
+    display: none !important;
+  }
+
+  /* When sidebar is collapsed */
+  &.sidebar-narrow,
+  &.sidebar-narrow-unfoldable,
+  &.hide {
+    img.sidebar-brand-full {
+      display: none !important;
+    }
+    img.sidebar-brand-narrow {
+      display: inline-block !important;
+    }
+  }
+}
+
+
 

@@ -16,6 +16,7 @@ const props = defineProps({
 });
 const page = usePage();
 const cartStore = useCartStore();
+const { showConfirm, showSuccess, showError } = window;
 // Filter and search products state
 const searchQuery = ref("");
 const selectedCategoryId = ref("");
@@ -158,7 +159,6 @@ async function processCheckout() {
                 receiptData.value = receipt;
                 showReceiptModal.value = true;
             }
-            showSuccess("Transaksi berhasil diproses!");
             cartStore.removeSelectedItems();
             cartStore.setAmountPaid(0);
             isDrawerOpen.value = false; // Auto close drawer after successful sale
@@ -1446,8 +1446,7 @@ const fmtNoSymbol = (v) =>
                 <div
                     id="thermal-receipt-body"
                     style="
-                        font-family:
-                            &quot;Courier New&quot;, Courier, monospace;
+                        font-family: 'Courier New', Courier, monospace;
                         width: 300px;
                         font-size: 12px;
                         color: #000;

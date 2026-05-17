@@ -50,6 +50,17 @@ class HandleInertiaRequests extends Middleware
                 'error' => fn () => $request->session()->get('error'),
                 'receipt' => fn () => $request->session()->get('receipt'),
             ],
+            'logo' => [
+                'full' => file_exists(public_path('uploads/logo_full.png')) 
+                    ? '/uploads/logo_full.png?t=' . filemtime(public_path('uploads/logo_full.png')) 
+                    : null,
+                'mini' => file_exists(public_path('uploads/logo_mini.png')) 
+                    ? '/uploads/logo_mini.png?t=' . filemtime(public_path('uploads/logo_mini.png')) 
+                    : null,
+                'brand_name' => file_exists(storage_path('app/settings.json')) 
+                    ? (json_decode(file_get_contents(storage_path('app/settings.json')), true)['brand_name'] ?? config('app.name', 'POS Apps')) 
+                    : config('app.name', 'POS Apps'),
+            ],
         ];
     }
 }
