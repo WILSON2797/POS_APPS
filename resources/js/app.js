@@ -1,6 +1,18 @@
 import { createApp, h } from 'vue'
 import { createInertiaApp } from '@inertiajs/vue3'
 import { createPinia } from 'pinia'
+import Swal from 'sweetalert2'
+import { useSwal } from '@/composables/useSwal'
+
+// Expose SweetAlert2 and customized toast/alert helpers globally
+window.Swal = Swal
+const { showSuccess, showError, showWarning, showConfirm, showLoading, closeLoading } = useSwal()
+window.showSuccess = showSuccess
+window.showError = showError
+window.showWarning = showWarning
+window.showConfirm = showConfirm
+window.showLoading = showLoading
+window.closeLoading = closeLoading
 
 // CoreUI
 import CoreuiVue from '@coreui/vue'

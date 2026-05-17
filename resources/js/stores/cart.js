@@ -7,7 +7,7 @@ export const useCartStore = defineStore('cart', {
     discountType: 'flat', // 'flat' or 'percent'
     discountValue: 0, // transaction discount
     taxRate: 11, // default 11% tax rate
-    paymentMethod: 'cash',
+    paymentMethod: null,
     amountPaid: 0,
     transactionNote: '',
     heldTransactions: JSON.parse(localStorage.getItem('held_transactions') || '[]'),
@@ -15,12 +15,14 @@ export const useCartStore = defineStore('cart', {
 
   getters: {
     itemSubtotal: (state) => {
-      return state.items.reduce((sum, item) => {
-        const itemPrice = Number(item.product.selling_price)
-        const itemQty = Number(item.qty)
-        const discount = Number(item.discount || 0)
-        return sum + (itemPrice * itemQty - discount)
-      }, 0)
+      return state.items
+        .filter(item => item.selected)
+        .reduce((sum, item) => {
+          const itemPrice = Number(item.product.selling_price)
+          const itemQty = Number(item.qty)
+          const discount = Number(item.discount || 0)
+          return sum + (itemPrice * itemQty - discount)
+        }, 0)
     },
 
     transactionDiscountAmount(state) {
@@ -46,7 +48,11 @@ export const useCartStore = defineStore('cart', {
       return state.amountPaid - this.grandTotal
     },
     
-    totalQty: (state) => state.items.reduce((sum, item) => sum + Number(item.qty), 0)
+    totalQty: (state) => state.items.filter(item => item.selected).reduce((sum, item) => sum + Number(item.qty), 0),
+
+    allItemsCount: (state) => state.items.length,
+
+    isAllSelected: (state) => state.items.length > 0 && state.items.every(item => item.selected)
   },
 
   actions: {
@@ -56,13 +62,15 @@ export const useCartStore = defineStore('cart', {
         if (existing.qty < product.stock) {
           existing.qty++
         }
+        existing.selected = true
       } else {
         if (product.stock > 0) {
           this.items.push({
             product,
             qty: 1,
             discount: 0,
-            note: ''
+            note: '',
+            selected: true
           })
         }
       }
@@ -70,6 +78,23 @@ export const useCartStore = defineStore('cart', {
 
     removeItem(productId) {
       this.items = this.items.filter(item => item.product.id !== productId)
+    },
+
+    toggleItemSelection(productId) {
+      const item = this.items.find(item => item.product.id === productId)
+      if (item) {
+        item.selected = !item.selected
+      }
+    },
+
+    selectAllItems(checked) {
+      this.items.forEach(item => {
+        item.selected = !!checked
+      })
+    },
+
+    removeSelectedItems() {
+      this.items = this.items.filter(item => !item.selected)
     },
 
     updateQty(productId, qty) {
@@ -129,7 +154,7 @@ export const useCartStore = defineStore('cart', {
       this.discountValue = 0
       this.amountPaid = 0
       this.transactionNote = ''
-      this.paymentMethod = 'cash'
+      this.paymentMethod = null
     },
 
     // suspended/hold transactions feature
