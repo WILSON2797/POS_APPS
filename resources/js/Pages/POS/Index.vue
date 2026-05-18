@@ -62,7 +62,7 @@ const selectedCustomer = computed({
     },
 });
 // Item manipulation
-function addToCart(p) {
+function addToCart(p, event) {
     const cartItem = cartStore.items.find((i) => i.product.id === p.id);
     const currentQty = cartItem ? cartItem.qty : 0;
     if (p.stock <= currentQty) {
@@ -71,12 +71,104 @@ function addToCart(p) {
         );
         return;
     }
+    
+    // Trigger Flying Animation ala Shopee
+    if (event) {
+        triggerFlyAnimation(event, p.image);
+    }
+
     cartStore.addItem(p);
     // Trigger bounce animation on floating button
     isCartBouncing.value = true;
     setTimeout(() => {
         isCartBouncing.value = false;
     }, 600);
+}
+
+function triggerFlyAnimation(event, imagePath) {
+    const card = event.currentTarget.closest(".product-pos-card") || event.target.closest(".product-pos-card");
+    if (!card) return;
+    
+    const img = card.querySelector("img");
+    const cartBtn = document.getElementById("pos-cart-btn");
+    if (!cartBtn) return;
+    
+    const startRect = img ? img.getBoundingClientRect() : card.getBoundingClientRect();
+    const targetRect = cartBtn.getBoundingClientRect();
+    
+    const flyer = document.createElement("div");
+    flyer.className = "cart-flyer-item";
+    
+    if (imagePath) {
+        flyer.style.backgroundImage = `url('/storage/${imagePath}')`;
+    } else {
+        flyer.style.background = "linear-gradient(135deg, #3b82f6, #1d4ed8)";
+        flyer.style.display = "flex";
+        flyer.style.alignItems = "center";
+        flyer.style.justifyContent = "center";
+        const miniBox = document.createElement("span");
+        miniBox.style.color = "#ffffff";
+        miniBox.style.fontSize = "14px";
+        miniBox.innerText = "📦";
+        flyer.appendChild(miniBox);
+    }
+    
+    const startSize = 54; // Premium larger start size for awesome visibility
+    flyer.style.width = `${startSize}px`;
+    flyer.style.height = `${startSize}px`;
+    flyer.style.position = "fixed";
+    flyer.style.zIndex = "99999";
+    flyer.style.borderRadius = "50%";
+    flyer.style.pointerEvents = "none";
+    flyer.style.boxShadow = "0 8px 24px rgba(59, 130, 246, 0.45), 0 0 0 2.5px #ffffff";
+    flyer.style.willChange = "transform, opacity, left, top";
+    
+    document.body.appendChild(flyer);
+    
+    // Core physics calculations for parabolic bezier trajectory (Shopee Style)
+    const startX = startRect.left + startRect.width / 2;
+    const startY = startRect.top + startRect.height / 2;
+    const targetX = targetRect.left + targetRect.width / 2;
+    const targetY = targetRect.top + targetRect.height / 2;
+    
+    // Control Point pushes the flight path 220px higher into a gorgeous parabola
+    const controlX = (startX + targetX) / 2;
+    const controlY = Math.min(startY, targetY) - 220; 
+    
+    const duration = 700; // ms (perfect timing for a luxurious arc)
+    const startTime = performance.now();
+    
+    function animate(currentTime) {
+        const elapsed = currentTime - startTime;
+        const t = Math.min(elapsed / duration, 1);
+        
+        // Quadratic Bezier Formula: B(t) = (1-t)^2 * P0 + 2*(1-t)*t * P1 + t^2 * P2
+        const x = (1 - t) * (1 - t) * startX + 2 * (1 - t) * t * controlX + t * t * targetX;
+        const y = (1 - t) * (1 - t) * startY + 2 * (1 - t) * t * controlY + t * t * targetY;
+        
+        // Scale down from 1.0 to 0.15, fade out slightly towards the end
+        const scale = 1 - t * 0.85;
+        const opacity = t > 0.8 ? 1 - (t - 0.8) / 0.2 : 1; 
+        
+        flyer.style.left = `${x - startSize / 2}px`;
+        flyer.style.top = `${y - startSize / 2}px`;
+        flyer.style.transform = `scale(${scale}) rotate(${t * 360}deg)`; // Awesome rotation spin!
+        flyer.style.opacity = opacity;
+        
+        if (t < 1) {
+            requestAnimationFrame(animate);
+        } else {
+            flyer.remove();
+            
+            // Trigger elegant springy bounce on cart
+            cartBtn.classList.add("cart-btn-pop");
+            setTimeout(() => {
+                cartBtn.classList.remove("cart-btn-pop");
+            }, 450);
+        }
+    }
+    
+    requestAnimationFrame(animate);
 }
 
 // FIX #2: Tambahkan validasi stok dan tipe data
@@ -373,6 +465,7 @@ const fmtNoSymbol = (v) =>
                                     placeholder="Cari nama / scan SKU..."
                                 />
                                 <button
+                                    id="pos-cart-btn"
                                     type="button"
                                     class="btn btn-primary d-flex align-items-center gap-2 px-3 position-relative flex-shrink-0"
                                     style="
@@ -460,7 +553,7 @@ const fmtNoSymbol = (v) =>
                             >
                                 <div
                                     class="card product-pos-card h-100 border-0 shadow-sm cursor-pointer position-relative overflow-hidden"
-                                    @click="addToCart(p)"
+                                    @click="addToCart(p, $event)"
                                 >
                                     <!-- Stock alert badge -->
                                     <span
@@ -475,16 +568,26 @@ const fmtNoSymbol = (v) =>
                                         Stok: {{ p.stock }}
                                     </span>
                                     <div
-                                        class="ratio ratio-4x3 bg-light d-flex align-items-center justify-content-center"
+                                        class="ratio ratio-4x3 product-card-img-container"
                                     >
                                         <img
                                             v-if="p.image"
                                             :src="`/storage/${p.image}`"
-                                            class="card-img-top object-fit-cover"
+                                            class="card-img-top object-fit-contain w-100 h-100 p-2"
                                             :alt="p.name"
                                         />
-                                        <div v-else class="fs-1 opacity-25">
-                                            📦
+                                        <div 
+                                            v-else 
+                                            class="w-100 h-100 d-flex flex-column align-items-center justify-content-center premium-no-image-placeholder"
+                                        >
+                                            <div class="placeholder-icon-wrapper d-flex align-items-center justify-content-center mb-1">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="feather">
+                                                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                                                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                                                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                                                </svg>
+                                            </div>
+                                            <span class="placeholder-text text-secondary fw-semibold font-monospace" style="font-size: 10px; letter-spacing: 0.5px;">NO PHOTO</span>
                                         </div>
                                     </div>
                                     <div
@@ -505,6 +608,15 @@ const fmtNoSymbol = (v) =>
                                                     fmt(p.selling_price)
                                                 }}</span
                                             >
+                                            <!-- Shopee-Style Add to Cart Floating Button -->
+                                            <button 
+                                                class="btn btn-primary btn-sm rounded-circle p-0 d-flex align-items-center justify-content-center add-to-cart-btn"
+                                                style="width: 26px; height: 26px;"
+                                                @click.stop="addToCart(p, $event)"
+                                                title="Tambah ke Keranjang"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" class="feather"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -1446,7 +1558,8 @@ const fmtNoSymbol = (v) =>
                 <div
                     id="thermal-receipt-body"
                     style="
-                        font-family: 'Courier New', Courier, monospace;
+                        font-family:
+                            &quot;Courier New&quot;, Courier, monospace;
                         width: 300px;
                         font-size: 12px;
                         color: #000;
