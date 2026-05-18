@@ -19,7 +19,7 @@ const isFluid = computed(() => {
     <div class="wrapper d-flex flex-column min-vh-100">
       <AppHeader />
       <div class="body flex-grow-1">
-        <CContainer class="px-4" :fluid="isFluid" :lg="!isFluid">
+        <CContainer class="px-4" fluid>
           <slot />
         </CContainer>
       </div>

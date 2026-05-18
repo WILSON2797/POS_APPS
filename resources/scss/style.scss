@@ -524,3 +524,74 @@ body {
   }
 }
 
+/* Premium Responsive Table Layout Overrides */
+.table-responsive {
+  width: 100% !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+table, .table {
+  width: 100% !important;
+  max-width: 100% !important;
+  
+  th, td {
+    vertical-align: middle !important;
+  }
+
+  // Freeze/Sticky Column for Aksi (always the last child)
+  tr th:last-child,
+  tr td:last-child {
+    position: sticky !important;
+    right: 0 !important;
+    z-index: 10 !important;
+    background-color: #ffffff !important; 
+    box-shadow: -6px 0 12px rgba(0, 0, 0, 0.05) !important;
+  }
+
+  // Alternating background colors for frozen cells to prevent bleed-through
+  tr:nth-child(even) td:last-child {
+    background-color: #f8fafc !important;
+  }
+
+  // Hover state synchronization on frozen column
+  tr:hover td:last-child {
+    background-color: #f1f5f9 !important;
+  }
+
+  // Sticky header for last column with higher z-index (11)
+  tr th:last-child {
+    background-color: #f8fafc !important;
+    z-index: 11 !important;
+    text-align: center !important;
+    
+    // Centering the "Aksi" column header title and icon
+    .d-flex, .align-items-center {
+      justify-content: center !important;
+      text-align: center !important;
+      width: 100% !important;
+    }
+  }
+
+  // Centering body cells content of the "Aksi" column
+  tr td:last-child {
+    text-align: center !important;
+    
+    .d-flex, .justify-content-center {
+      justify-content: center !important;
+      width: 100% !important;
+    }
+  }
+}
+
+/* Ensure data cards expand beautifully and only content is scrollable */
+.card {
+  width: 100% !important;
+  
+  .card-body {
+    width: 100% !important;
+    overflow-x: auto !important; /* Horizontal scroll only inside the body wrapper if viewport overflows */
+  }
+}
+
+
