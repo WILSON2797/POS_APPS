@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useForm } from "@inertiajs/vue3";
 import DefaultLayout from "@/Layouts/DefaultLayout.vue";
 import BaseButton from "@/Components/Base/BaseButton.vue";
@@ -51,6 +51,54 @@ const filteredProducts = computed(() => {
         return matchesSearch && matchesCategory;
     });
 });
+
+// Watch search query for instant exact barcode matches (autofill & add to cart)
+watch(searchQuery, (newVal) => {
+    const query = newVal.trim().toLowerCase();
+    if (!query) return;
+
+    // Find if there is an exact barcode match in products list
+    const exactProduct = props.products.find(
+        (p) => p.barcode && p.barcode.toLowerCase() === query
+    );
+
+    if (exactProduct) {
+        // Grab the card element synchronously while it is still filtered in the DOM
+        const cardEl = document.querySelector(".product-pos-card");
+        
+        // Clear search input instantly to prevent double scans/triggers
+        searchQuery.value = "";
+        
+        // Add to cart with the premium Shopee flying animation
+        addToCart(exactProduct, cardEl);
+    }
+});
+
+// Handle enter key on search input (backup/single item autocomplete selector)
+function handleSearchEnter() {
+    const query = searchQuery.value.trim().toLowerCase();
+    if (!query) return;
+
+    const exactProduct = props.products.find(
+        (p) => p.barcode && p.barcode.toLowerCase() === query
+    );
+
+    if (exactProduct) {
+        const cardEl = document.querySelector(".product-pos-card");
+        searchQuery.value = "";
+        addToCart(exactProduct, cardEl);
+        return;
+    }
+
+    // Smart UX: If query matches exactly 1 product, select it on Enter press
+    if (filteredProducts.value.length === 1) {
+        const singleProduct = filteredProducts.value[0];
+        const cardEl = document.querySelector(".product-pos-card");
+        searchQuery.value = "";
+        addToCart(singleProduct, cardEl);
+    }
+}
+
 // Quick cash buttons
 const quickCashAmounts = [10000, 20000, 50000, 100000, 150000, 200000];
 // Selected customer selection computed
@@ -61,10 +109,15 @@ const selectedCustomer = computed({
         cartStore.setCustomer(cust || null);
     },
 });
+// Pending adds to cart (flying items) to prevent race conditions on stock validation
+const pendingCartAdds = ref({});
+
 // Item manipulation
-function addToCart(p, event) {
+function addToCart(p, eventOrElement) {
     const cartItem = cartStore.items.find((i) => i.product.id === p.id);
-    const currentQty = cartItem ? cartItem.qty : 0;
+    const flyingQty = pendingCartAdds.value[p.id] || 0;
+    const currentQty = (cartItem ? cartItem.qty : 0) + flyingQty;
+    
     if (p.stock <= currentQty) {
         showError(
             `Stok produk "${p.name}" tidak mencukupi (Tersedia ${p.stock}).`,
@@ -73,20 +126,43 @@ function addToCart(p, event) {
     }
     
     // Trigger Flying Animation ala Shopee
-    if (event) {
-        triggerFlyAnimation(event, p.image);
+    if (eventOrElement) {
+        // Increment pending count immediately to lock the stock during flight
+        pendingCartAdds.value[p.id] = (pendingCartAdds.value[p.id] || 0) + 1;
+        
+        triggerFlyAnimation(eventOrElement, p.image, () => {
+            // Decrement pending count
+            if (pendingCartAdds.value[p.id] > 0) {
+                pendingCartAdds.value[p.id]--;
+            }
+            
+            // Add to cart only when animation completes
+            cartStore.addItem(p);
+            // Trigger bounce animation on floating button
+            isCartBouncing.value = true;
+            setTimeout(() => {
+                isCartBouncing.value = false;
+            }, 600);
+        });
+    } else {
+        // No animation, add instantly
+        cartStore.addItem(p);
+        isCartBouncing.value = true;
+        setTimeout(() => {
+            isCartBouncing.value = false;
+        }, 600);
     }
-
-    cartStore.addItem(p);
-    // Trigger bounce animation on floating button
-    isCartBouncing.value = true;
-    setTimeout(() => {
-        isCartBouncing.value = false;
-    }, 600);
 }
 
-function triggerFlyAnimation(event, imagePath) {
-    const card = event.currentTarget.closest(".product-pos-card") || event.target.closest(".product-pos-card");
+function triggerFlyAnimation(eventOrElement, imagePath, onComplete) {
+    let card = null;
+    if (eventOrElement) {
+        if (eventOrElement.nodeType === 1) {
+            card = eventOrElement; // Already an HTML element
+        } else if (eventOrElement.currentTarget || eventOrElement.target) {
+            card = eventOrElement.currentTarget?.closest(".product-pos-card") || eventOrElement.target?.closest(".product-pos-card");
+        }
+    }
     if (!card) return;
     
     const img = card.querySelector("img");
@@ -165,6 +241,11 @@ function triggerFlyAnimation(event, imagePath) {
             setTimeout(() => {
                 cartBtn.classList.remove("cart-btn-pop");
             }, 450);
+            
+            // Call completion callback
+            if (onComplete) {
+                onComplete();
+            }
         }
     }
     
@@ -422,10 +503,182 @@ function handleHotkeys(e) {
 }
 onMounted(() => {
     window.addEventListener("keydown", handleHotkeys);
+    // Otomatis fokuskan kursor ke kolom pencarian/scan saat halaman dimuat (Scanner Ready!)
+    setTimeout(() => {
+        document.getElementById("pos-search-input")?.focus();
+    }, 300);
 });
 onUnmounted(() => {
     window.removeEventListener("keydown", handleHotkeys);
 });
+
+// =========================================================================
+// FITUR ADVANCED BARCODE SCANNER (HARDWARE & KAMERA DEVICE)
+// =========================================================================
+
+// State reaktif untuk mengontrol scanner kamera
+const isCameraModalOpen = ref(false); // Buka/tutup modal kamera
+const cameraDevices = ref([]);       // Daftar semua kamera yang terdeteksi di device
+const activeCameraId = ref("");      // ID kamera aktif saat ini yang sedang digunakan
+let html5QrcodeInstance = null;      // Menyimpan instance library Html5Qrcode
+
+// Fungsi untuk memfokuskan kursor ke input pencarian (Sangat penting untuk scanner fisik Kabel/Bluetooth)
+function focusSearchInput() {
+    const input = document.getElementById("pos-search-input");
+    if (input) {
+        input.focus();
+        showSuccess("Fokus kursor diarahkan ke pencarian. Scanner Fisik Siap!");
+    }
+}
+
+// Fungsi untuk membunyikan suara beep sukses secara instan memakai Web Audio API browser (Kinerja sangat cepat & offline-friendly)
+function playBeepSound() {
+    try {
+        const context = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = context.createOscillator();
+        const gainNode = context.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(context.destination);
+        oscillator.type = "sine";
+        oscillator.frequency.value = 1000; // Frekuensi nada tinggi (Hz)
+        gainNode.gain.setValueAtTime(0, context.currentTime);
+        gainNode.gain.linearRampToValueAtTime(0.3, context.currentTime + 0.05); // Nada masuk cepat
+        gainNode.gain.linearRampToValueAtTime(0, context.currentTime + 0.15);  // Nada keluar cepat
+        oscillator.start();
+        oscillator.stop(context.currentTime + 0.15); // Suara mati otomatis dalam 150ms
+    } catch (e) {
+        console.warn("Umpan balik audio scanner gagal:", e);
+    }
+}
+
+// Memuat pustaka html5-qrcode secara dinamis (On-Demand) lewat CDN agar load awal POS tetap ringan
+function loadHtml5Qrcode() {
+    return new Promise((resolve, reject) => {
+        if (window.Html5Qrcode) {
+            resolve(window.Html5Qrcode);
+            return;
+        }
+        const script = document.createElement("script");
+        script.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
+        script.onload = () => resolve(window.Html5Qrcode);
+        script.onerror = () => reject(new Error("Gagal mengunduh pustaka scanner kamera. Periksa koneksi internet."));
+        document.head.appendChild(script);
+    });
+}
+
+// Membuka modal scanner kamera dan mendeteksi izin & perangkat kamera
+async function openCameraScanner() {
+    try {
+        isCameraModalOpen.value = true;
+        
+        // Memuat pustaka pendeteksi barcode
+        await loadHtml5Qrcode();
+        
+        // Mengambil daftar kamera yang tersedia di HP/Laptop/Tablet
+        const devices = await Html5Qrcode.getCameras();
+        if (devices && devices.length > 0) {
+            cameraDevices.value = devices;
+            
+            // Mencoba mendeteksi kamera belakang (back/rear) untuk hasil scan barcode yang optimal
+            const rearCamera = devices.find(d => 
+                d.label.toLowerCase().includes('back') || 
+                d.label.toLowerCase().includes('rear') ||
+                d.label.toLowerCase().includes('belakang')
+            );
+            activeCameraId.value = rearCamera ? rearCamera.id : devices[0].id;
+            
+            // Menjalankan streaming kamera
+            startScanning();
+        } else {
+            showError("Tidak ada kamera yang terdeteksi di perangkat Anda.");
+            isCameraModalOpen.value = false;
+        }
+    } catch (err) {
+        showError("Gagal mengakses kamera: " + err.message);
+        isCameraModalOpen.value = false;
+    }
+}
+
+// Memulai pemindaian barcode dengan konfigurasi FPS dan QRBox optimal
+function startScanning() {
+    if (html5QrcodeInstance) {
+        // Hentikan instance scanner aktif lama sebelum memulai yang baru (Menghindari tabrakan memori)
+        html5QrcodeInstance.stop().then(() => {
+            initializeScanner();
+        }).catch(() => {
+            initializeScanner();
+        });
+    } else {
+        initializeScanner();
+    }
+}
+
+// Melakukan inisialisasi modul scanner dan memetakan kamera ke elemen DOM preview
+function initializeScanner() {
+    html5QrcodeInstance = new Html5Qrcode("camera-scanner-preview");
+    
+    const config = {
+        fps: 15, // Frame-per-second optimal untuk pemindaian
+        qrbox: { width: 280, height: 160 } // Dimensi kotak bidik horizontal yang pas untuk EAN-13 / UPC barcode
+    };
+    
+    html5QrcodeInstance.start(
+        activeCameraId.value,
+        config,
+        (decodedText) => {
+            // Callback sukses ketika barcode terbaca
+            handleCameraScanSuccess(decodedText);
+        },
+        () => {
+            // Frame gagal diabaikan diam-diam agar proses loop pemindaian tetap lancar & ringan
+        }
+    ).catch(err => {
+        console.error("Gagal menginisialisasi kamera:", err);
+    });
+}
+
+// Menangani data barcode hasil scan kamera yang berhasil dideteksi
+function handleCameraScanSuccess(barcodeText) {
+    playBeepSound(); // Bunyikan umpan balik suara scan sukses
+    
+    // Cari produk di katalog yang barcodenya cocok secara tepat
+    const exactProduct = props.products.find(
+        (p) => p.barcode && p.barcode.toLowerCase() === barcodeText.trim().toLowerCase()
+    );
+    
+    if (exactProduct) {
+        // Hentikan stream kamera dan tutup modal
+        closeCameraScanner();
+        showSuccess(`Scan Sukses: ${exactProduct.name}`);
+        
+        // Memicu Shopee flying animation dari area katalog produk menuju keranjang
+        setTimeout(() => {
+            const cardEl = document.querySelector(".product-pos-card");
+            addToCart(exactProduct, cardEl);
+        }, 150);
+    } else {
+        showError(`Produk dengan barcode "${barcodeText}" belum terdaftar.`);
+    }
+}
+
+// Menghentikan stream kamera secara bersih dan menutup modal (Sangat penting agar baterai & RAM tetap hemat)
+function closeCameraScanner() {
+    isCameraModalOpen.value = false;
+    if (html5QrcodeInstance) {
+        html5QrcodeInstance.stop().then(() => {
+            html5QrcodeInstance = null;
+        }).catch(err => {
+            console.error("Gagal menghentikan kamera secara bersih:", err);
+            html5QrcodeInstance = null;
+        });
+    }
+}
+
+// Menangani perubahan input dropdown kamera secara dinamis
+function handleCameraChange() {
+    startScanning();
+}
+
 // Currency Helpers
 const fmt = (v) =>
     new Intl.NumberFormat("id-ID", {
@@ -456,14 +709,50 @@ const fmtNoSymbol = (v) =>
                             <div
                                 class="col-md-6 d-flex align-items-center gap-2"
                             >
-                                <input
-                                    id="pos-search-input"
-                                    v-model="searchQuery"
-                                    type="text"
-                                    class="form-control flex-grow-1"
-                                    style="height: 40px; font-size: 14px"
-                                    placeholder="Cari nama / scan SKU..."
-                                />
+                                <div class="position-relative flex-grow-1">
+                                    <!-- Input Pencarian & Scan Barcode terintegrasi secara premium -->
+                                    <input
+                                        id="pos-search-input"
+                                        v-model="searchQuery"
+                                        type="text"
+                                        class="form-control w-100"
+                                        style="height: 40px; font-size: 14px; padding-left: 48px; padding-right: 76px;"
+                                        placeholder="Cari nama / scan SKU (F1)..."
+                                        @keydown.enter="handleSearchEnter"
+                                    />
+                                    <!-- Ikon Kaca Pembesar di Sisi Kiri Input (Terpusat Sempurna & Spacing Premium) -->
+                                    <!-- Catatan: Class 'start-0' sengaja dihapus agar tidak berbenturan dengan aturan '!important' di CSS Global / Bootstrap -->
+                                    <span class="position-absolute d-flex align-items-center justify-content-center text-secondary" style="pointer-events: none; left: 20px; top: 0; bottom: 0; height: 100%;">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="feather"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                                    </span>
+                                    <!-- Tombol Pemicu di Sisi Kanan Input (Terpusat Sempurna) -->
+                                    <div class="position-absolute end-0 d-flex align-items-center gap-1 pe-2" style="z-index: 10; top: 0; bottom: 0; height: 100%;">
+                                        <!-- Tombol Indikator Status & Fokus untuk Scanner Fisik (Kabel/Bluetooth) -->
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm btn-light p-1 d-flex align-items-center justify-content-center border-0 rounded-circle position-relative"
+                                            style="width: 28px; height: 28px;"
+                                            title="Status Scanner Fisik Ready. Klik untuk memfokuskan kursor."
+                                            @click="focusSearchInput"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather"><path d="M5 18H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2"></path><path d="M19 6h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2"></path><line x1="12" y1="6" x2="12" y2="18"></line><line x1="8" y1="6" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="18"></line></svg>
+                                            <!-- Titik Lampu Hijau Berkedip Menandakan Scanner Aktif & Fokus -->
+                                            <span class="position-absolute top-0 end-0 translate-middle badge rounded-circle bg-success border border-white p-1 pulse-animation" style="transform: translate(-10%, 25%) !important;">
+                                                <span class="visually-hidden">Ready</span>
+                                            </span>
+                                        </button>
+                                        <!-- Tombol Pemicu Scanner Kamera Device (Webcam/HP) -->
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm btn-light p-1 d-flex align-items-center justify-content-center border-0 rounded-circle text-primary"
+                                            style="width: 28px; height: 28px;"
+                                            title="Scan Barcode via Kamera Device"
+                                            @click="openCameraScanner"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                                        </button>
+                                    </div>
+                                </div>
                                 <button
                                     id="pos-cart-btn"
                                     type="button"
@@ -1495,6 +1784,50 @@ const fmtNoSymbol = (v) =>
                 </div>
             </div>
         </div>
+        <!-- Modal Scan Barcode via Kamera Device -->
+        <BaseModal
+            :show="isCameraModalOpen"
+            title="Scan Barcode via Kamera"
+            :show-footer="false"
+            @close="closeCameraScanner"
+        >
+            <div class="p-1">
+                <!-- Dropdown pemilih kamera apabila terdeteksi lebih dari 1 kamera pada device -->
+                <div v-if="cameraDevices.length > 1" class="mb-3">
+                    <label class="form-label fw-semibold small text-secondary">Pilih Kamera</label>
+                    <select v-model="activeCameraId" class="form-select form-select-sm" @change="handleCameraChange">
+                        <option v-for="device in cameraDevices" :key="device.id" :value="device.id">
+                            {{ device.label || `Kamera ${cameraDevices.indexOf(device) + 1}` }}
+                        </option>
+                    </select>
+                </div>
+                
+                <!-- Frame visual pembidik barcode berdesain futuristik premium -->
+                <div class="position-relative bg-dark rounded-4 overflow-hidden border border-secondary border-opacity-25 shadow-lg" style="aspect-ratio: 4/3; max-width: 480px; margin: 0 auto;">
+                    <!-- Elemen target yang akan disisipi streaming video kamera oleh library html5-qrcode -->
+                    <div id="camera-scanner-preview" class="w-100 h-100"></div>
+                    
+                    <!-- Garis Laser Sensor Merah Berkedip Naik Turun (Looping Animation) -->
+                    <div class="scanner-laser-line"></div>
+                    
+                    <!-- Sisi Siku Target Kotak Bidik Hijau (Target Corners CSS Overlay) -->
+                    <div class="scanner-corner top-left"></div>
+                    <div class="scanner-corner top-right"></div>
+                    <div class="scanner-corner bottom-left"></div>
+                    <div class="scanner-corner bottom-right"></div>
+                </div>
+                
+                <div class="text-center mt-3 bg-light p-2.5 rounded-3 border">
+                    <small class="text-secondary d-block fw-semibold" style="font-size: 12px;">
+                        Posisikan garis barcode produk agar sejajar lurus tepat di dalam area pemindaian.
+                    </small>
+                    <small class="text-success fw-bold mt-1.5 d-flex align-items-center justify-content-center gap-1.5" style="font-size: 11px;">
+                        <span>🔊</span> Umpan balik bunyi beep audio aktif otomatis jika barcode berhasil ter-scan!
+                    </small>
+                </div>
+            </div>
+        </BaseModal>
+
         <!-- Modal Held Transactions -->
         <BaseModal
             :show="showHeldModal"
@@ -1674,3 +2007,63 @@ const fmtNoSymbol = (v) =>
     </div>
 </template>
 <!-- Styling has been moved to global resources/scss/style.scss for full structured layout -->
+
+<style scoped>
+/* =========================================================================
+   ESTETIKA VISUAL PREMIUM UNTUK SCANNER KAMERA & HARDWARE
+   ========================================================================= */
+
+/* Garis sensor laser pemindai kamera (Bergerak naik turun secara halus) */
+.scanner-laser-line {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 3.5px;
+    background: linear-gradient(to right, transparent, #10b981, transparent);
+    box-shadow: 0 0 10px #10b981, 0 0 20px #10b981;
+    z-index: 5;
+    animation: scanLineAnimation 2.2s infinite ease-in-out;
+}
+
+/* Siku-siku bidik target kamera berona hijau futuristik */
+.scanner-corner {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    border: 3.5px solid #10b981;
+    z-index: 6;
+}
+.scanner-corner.top-left { top: 16px; left: 16px; border-right: none; border-bottom: none; border-radius: 6px 0 0 0; }
+.scanner-corner.top-right { top: 16px; right: 16px; border-left: none; border-bottom: none; border-radius: 0 6px 0 0; }
+.scanner-corner.bottom-left { bottom: 16px; left: 16px; border-right: none; border-top: none; border-radius: 0 0 0 6px; }
+.scanner-corner.bottom-right { bottom: 16px; right: 16px; border-left: none; border-top: none; border-radius: 0 0 6px 0; }
+
+/* Animasi sensor gerak laser pemindai */
+@keyframes scanLineAnimation {
+    0% { top: 10%; }
+    50% { top: 90%; }
+    100% { top: 10%; }
+}
+
+/* Animasi berkedip lembut untuk indikator status fisik (Pulsing Dot) */
+@keyframes pulse {
+    0% { transform: scale(0.85); opacity: 0.75; }
+    50% { transform: scale(1.15); opacity: 1; }
+    100% { transform: scale(0.85); opacity: 0.75; }
+}
+
+.pulse-animation {
+    animation: pulse 1.6s infinite ease-in-out;
+}
+
+/* Custom premium hover effect untuk input field barcode */
+#pos-search-input {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+#pos-search-input:focus {
+    box-shadow: 0 4px 14px rgba(59, 130, 246, 0.15);
+    border-color: #3b82f6;
+}
+</style>
