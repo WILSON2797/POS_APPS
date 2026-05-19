@@ -5,6 +5,7 @@
       {{ label }} <span v-if="required" class="text-danger">*</span>
     </label>
     <VueDatePicker
+      :key="'dp-' + label"
       :modelValue="modelValue"
       :range="range"
       :month-picker="monthPicker"
@@ -12,8 +13,9 @@
       :format="format"
       :placeholder="placeholder"
       :disabled="disabled"
+      :transitions="false"
+      teleport="body"
       auto-apply
-      locale="id"
       :class="{ 'dp--invalid': error }"
       @update:modelValue="$emit('update:modelValue', $event)"
     />
@@ -22,8 +24,7 @@
 </template>
 
 <script setup>
-import VueDatePicker from '@vuepic/vue-datepicker'
-import '@vuepic/vue-datepicker/dist/main.css'
+import { VueDatePicker } from '@vuepic/vue-datepicker'
 
 defineProps({
   modelValue:  { default: null },

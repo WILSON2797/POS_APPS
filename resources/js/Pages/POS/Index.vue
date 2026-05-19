@@ -252,17 +252,30 @@ function triggerFlyAnimation(eventOrElement, imagePath, onComplete) {
     requestAnimationFrame(animate);
 }
 
+// Format raw number to Indonesian/thousands dot separator
+const formatNumber = (val) => {
+    if (val === undefined || val === null || val === '') return '';
+    // Strip everything except digits
+    const num = parseFloat(val.toString().replace(/[^0-9.-]/g, ''));
+    if (isNaN(num)) return '';
+    return new Intl.NumberFormat('id-ID').format(num);
+};
+
 // FIX #2: Tambahkan validasi stok dan tipe data
 function handleQtyChange(productId, qty) {
     const item = cartStore.items.find((i) => i.product.id === productId);
     if (!item) return;
-    const parsed = parseInt(qty, 10);
-    if (isNaN(parsed) || parsed < 1) return;
+    
+    // Strip dots/thousands separator and parse to integer
+    const cleanValue = String(qty).replace(/[^0-9]/g, '');
+    let parsed = parseInt(cleanValue, 10);
+    if (isNaN(parsed) || parsed < 1) parsed = 1;
+    
     if (parsed > item.product.stock) {
         showError(
             `Stok "${item.product.name}" tidak mencukupi (maks: ${item.product.stock}).`,
         );
-        return;
+        parsed = item.product.stock;
     }
     cartStore.updateQty(productId, parsed);
 }
@@ -288,6 +301,7 @@ function setQuickCash(amount) {
     }
 }
 async function processCheckout() {
+    if (checkoutForm.processing) return;
     const selectedItems = cartStore.items.filter((item) => item.selected);
     if (selectedItems.length === 0) {
         showError("Tidak ada item terpilih untuk dibayar.");
@@ -1224,7 +1238,7 @@ const fmtNoSymbol = (v) =>
                                 <!-- Qty input controls -->
                                 <div
                                     class="input-group input-group-sm flex-shrink-0"
-                                    style="width: 105px"
+                                    style="width: 130px"
                                 >
                                     <button
                                         class="btn btn-outline-secondary py-0 px-2 d-flex align-items-center justify-content-center"
@@ -1258,13 +1272,11 @@ const fmtNoSymbol = (v) =>
                                         </svg>
                                     </button>
                                     <input
-                                        type="number"
+                                        type="text"
                                         class="form-control text-center p-0 font-monospace fw-bold"
                                         style="font-size: 13px"
-                                        :value="item.qty"
-                                        min="1"
-                                        :max="item.product.stock"
-                                        @change="
+                                        :value="formatNumber(item.qty)"
+                                        @input="
                                             handleQtyChange(
                                                 item.product.id,
                                                 $event.target.value,
@@ -1890,13 +1902,7 @@ const fmtNoSymbol = (v) =>
             >
                 <div
                     id="thermal-receipt-body"
-                    style="
-                        font-family:
-                            &quot;Courier New&quot;, Courier, monospace;
-                        width: 300px;
-                        font-size: 12px;
-                        color: #000;
-                    "
+                    style="font-family: 'Courier New', Courier, monospace; width: 300px; font-size: 12px; color: #000;"
                 >
                     <div class="text-center">
                         <h4 style="margin: 0 0 5px 0; font-weight: bold">

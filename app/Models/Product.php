@@ -11,7 +11,7 @@ class Product extends Model
     use HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'barcode', 'name', 'category_id', 'supplier_id',
+        'barcode', 'name', 'category_id',
         'cost_price', 'selling_price', 'stock', 'min_stock',
         'unit', 'description', 'image', 'is_active',
     ];
@@ -28,11 +28,6 @@ class Product extends Model
     public function category()
     {
         return $this->belongsTo(Category::class);
-    }
-
-    public function supplier()
-    {
-        return $this->belongsTo(Supplier::class);
     }
 
     public function getMarginAttribute(): float

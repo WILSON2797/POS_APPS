@@ -594,4 +594,196 @@ table, .table {
   }
 }
 
+/* ==========================================================================
+   VueDatePicker Custom Premium Styles & Overrides
+   ========================================================================== */
+
+.dp__theme_light, .dp__theme_dark {
+  --dp-background-color: #ffffff !important;
+  --dp-text-color: #334155 !important;
+  --dp-hover-color: #f1f5f9 !important;
+  --dp-hover-text-color: #1e293b !important;
+  --dp-hover-icon-color: #3b82f6 !important;
+  --dp-primary-color: #3b82f6 !important;
+  --dp-primary-disabled-color: #94a3b8 !important;
+  --dp-primary-text-color: #ffffff !important;
+  --dp-border-color: #cbd5e1 !important;
+  --dp-menu-border-color: rgba(0, 0, 0, 0.08) !important;
+  --dp-border-color-hover: #94a3b8 !important;
+  --dp-border-color-focus: #3b82f6 !important;
+  --dp-disabled-color: #f1f5f9 !important;
+  --dp-scroll-bar-background: #f1f5f9 !important;
+  --dp-scroll-bar-color: #cbd5e1 !important;
+  --dp-success-color: #10b981 !important;
+  --dp-success-color-disabled: #a7f3d0 !important;
+  --dp-icon-color: #64748b !important;
+  --dp-danger-color: #ef4444 !important;
+  --dp-marker-color: #ef4444 !important;
+  --dp-tooltip-color: #475569 !important;
+  --dp-disabled-color-text: #94a3b8 !important;
+  --dp-highlight-color: rgba(59, 130, 246, 0.1) !important;
+  --dp-range-between-dates-background-color: var(--dp-highlight-color) !important;
+  --dp-range-between-dates-text-color: var(--dp-text-color) !important;
+  --dp-range-between-border-color: var(--dp-highlight-color) !important;
+}
+
+/* Force higher z-index and premium card shadow for datepicker menu */
+.dp__outer_menu_wrap {
+  z-index: 999999 !important;
+}
+
+.dp__menu {
+  font-family: inherit !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05) !important;
+  border: 1px solid rgba(0, 0, 0, 0.06) !important;
+  padding: 8px !important;
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+}
+
+/* Customize date cell aesthetics */
+.dp__cell_inner {
+  border-radius: 8px !important;
+  font-weight: 500 !important;
+  font-size: 13.5px !important;
+  transition: all 0.15s ease !important;
+}
+
+/* Calendar header styling */
+.dp__calendar_header_item {
+  font-weight: 600 !important;
+  color: #64748b !important;
+  font-size: 12px !important;
+}
+
+/* Make calendar month/year header look beautiful */
+.dp__month_year_row {
+  margin-bottom: 8px !important;
+  
+  .dp__month_year_select {
+    font-weight: 700 !important;
+    color: #1e293b !important;
+    border-radius: 6px !important;
+    
+    &:hover {
+      background-color: #f1f5f9 !important;
+    }
+  }
+  
+  svg {
+    stroke-width: 2.5px !important;
+  }
+}
+
+/* ==========================================================================
+   Goods Receipt (Penerimaan Barang) Premium Responsive Overrides & Classes
+   ========================================================================== */
+
+/* Responsive height class: full height on desktop, fluid auto height on mobile/tablet */
+@media (min-width: 992px) {
+  .h-lg-100 {
+    height: 100% !important;
+  }
+}
+
+/* Search suggestions box & Card overflow visibility */
+.gr-search-card {
+  position: relative !important;
+  z-index: 2000 !important; /* Higher than sticky-top table header (1020) */
+  overflow: visible !important;
+
+  .gr-search-card-body,
+  .card-body {
+    overflow: visible !important;
+    overflow-x: visible !important;
+    overflow-y: visible !important;
+  }
+}
+
+.gr-suggestions-list {
+  max-height: 280px;
+  overflow-y: auto;
+  z-index: 999999 !important;
+  background: #ffffff !important;
+}
+
+/* Custom responsiveness styles for stacked elements and heights */
+@media (max-width: 991.98px) {
+  .col-lg-4, .col-lg-8 {
+    .h-lg-100, .h-100 {
+      height: auto !important; /* Ensure height fluidly flows on mobile/tablet */
+    }
+    .flex-grow-1 {
+      flex-grow: unset !important;
+    }
+  }
+
+  /* Force search card and body to be completely visible on mobile stack */
+  .gr-search-card,
+  .gr-search-card-body {
+    overflow: visible !important;
+    height: auto !important;
+  }
+}
+
+/* Responsive Table / Card for Cart List on Mobile */
+.gr-mobile-item-card {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+
+  &:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  }
+
+  .item-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1e293b;
+    margin-bottom: 2px;
+  }
+
+  .item-barcode {
+    font-family: monospace;
+    font-size: 12px;
+    color: #64748b;
+    margin-bottom: 12px;
+  }
+
+  .item-controls-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    align-items: center;
+    border-top: 1px dashed rgba(0, 0, 0, 0.06);
+    padding-top: 12px;
+  }
+
+  .item-control-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #94a3b8;
+    margin-bottom: 4px;
+    letter-spacing: 0.5px;
+  }
+  
+  .item-subtotal-box {
+    grid-column: span 2;
+    background-color: #f8fafc;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-top: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+
+
 

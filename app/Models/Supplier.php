@@ -14,8 +14,8 @@ class Supplier extends Model
         'name', 'contact_person', 'phone', 'whatsapp', 'email', 'address',
     ];
 
-    public function products()
+    public function goodsReceipts()
     {
-        return $this->hasMany(Product::class);
+        return $this->hasMany(GoodsReceipt::class);
     }
 }

@@ -12,7 +12,7 @@ class SupplierController extends Controller
     public function index()
     {
         return Inertia::render('Suppliers/Index', [
-            'suppliers' => Supplier::withCount('products')->latest()->get(),
+            'suppliers' => Supplier::withCount('goodsReceipts')->latest()->get(),
         ]);
     }
 

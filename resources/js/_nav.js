@@ -23,15 +23,27 @@ export default [
   },
   {
     component: 'CNavItem',
-    name: 'Produk',
+    name: 'Master Product',
     to: '/products',
     icon: 'cil-basket',
+  },
+  {
+    component: 'CNavItem',
+    name: 'Report Stock',
+    to: '/products/stock-movements',
+    icon: 'cil-history',
   },
   {
     component: 'CNavItem',
     name: 'Supplier',
     to: '/suppliers',
     icon: 'cil-truck',
+  },
+  {
+    component: 'CNavItem',
+    name: 'Penerimaan Barang',
+    to: '/goods-receipts',
+    icon: 'cil-cloud-download',
   },
   {
     component: 'CNavItem',

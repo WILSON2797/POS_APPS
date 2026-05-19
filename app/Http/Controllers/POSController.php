@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Transaction;
 use App\Models\TransactionDetail;
+use App\Models\StockMovement;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -124,8 +125,25 @@ class POSController extends Controller
                     'subtotal' => $data['subtotal'],
                 ]);
 
-                // Deduct stock
+                // Ambil sisa stok saat ini sebelum dikurangi (Locked Row)
+                $oldStock = $data['product']->stock;
+                $newStock = $oldStock - $data['qty'];
+
+                // Potong stok produk
                 $data['product']->decrement('stock', $data['qty']);
+
+                // Catat mutasi stok keluar (Stock Outbound) secara otomatis
+                StockMovement::create([
+                    'product_id' => $data['product']->id,
+                    'user_id' => Auth::id(),
+                    'type' => 'out',
+                    'quantity' => $data['qty'],
+                    'old_stock' => $oldStock,
+                    'new_stock' => $newStock,
+                    'reference_type' => Transaction::class,
+                    'reference_id' => $transaction->id,
+                    'note' => "Penjualan POS via Invoice #{$transaction->invoice_no}",
+                ]);
             }
 
             // 5. Customer Loyalty Points Calculation (1 point per Rp 10.000 spent)

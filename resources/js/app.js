@@ -3,6 +3,7 @@ import { createInertiaApp } from '@inertiajs/vue3'
 import { createPinia } from 'pinia'
 import Swal from 'sweetalert2'
 import { useSwal } from '@/composables/useSwal'
+import '@vuepic/vue-datepicker/dist/main.css'
 
 // Expose SweetAlert2 and customized toast/alert helpers globally
 window.Swal = Swal

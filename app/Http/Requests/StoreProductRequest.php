@@ -11,7 +11,6 @@ class StoreProductRequest extends FormRequest
             'barcode'       => ['nullable', 'string', 'max:100', 'unique:products,barcode'],
             'name'          => ['required', 'string', 'max:200'],
             'category_id'   => ['required', 'exists:categories,id'],
-            'supplier_id'   => ['nullable', 'exists:suppliers,id'],
             'cost_price'    => ['required', 'numeric', 'min:0'],
             'selling_price' => ['required', 'numeric', 'min:0'],
             'stock'         => ['required', 'integer', 'min:0'],

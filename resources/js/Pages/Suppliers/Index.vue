@@ -54,11 +54,11 @@ const columns = [
       }, getValue() ?? '-'),
   },
   {
-    accessorKey: 'products_count',
-    header: 'Produk',
-    size: 80,
+    accessorKey: 'goods_receipts_count',
+    header: 'Total Restok',
+    size: 110,
     enableColumnFilter: false,
-    cell: ({ getValue }) => h('span', { class: 'badge bg-info text-dark' }, getValue()),
+    cell: ({ getValue }) => h('span', { class: 'badge bg-info text-dark' }, `${getValue()}x`),
   },
   {
     id: 'actions',
