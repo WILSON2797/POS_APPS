@@ -98,6 +98,12 @@ const featherIcons = {
       <polyline points="7 10 12 15 17 10"></polyline>
       <line x1="12" y1="15" x2="12" y2="3"></line>
     </svg>
+  `,
+  'cil-dollar': `
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-nav-icon">
+      <line x1="12" y1="1" x2="12" y2="23"></line>
+      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+    </svg>
   `
 }
 
@@ -228,16 +234,39 @@ const AppSidebarNav = defineComponent({
           )
     }
 
-    return () =>
-      h(
+    return () => {
+      const userRole = page.props.auth?.user?.role
+      const filterNav = (items) => {
+        return items
+          .filter((item) => {
+            if (item.roles) {
+              return item.roles.includes(userRole)
+            }
+            return true
+          })
+          .map((item) => {
+            if (item.items) {
+              return {
+                ...item,
+                items: filterNav(item.items),
+              }
+            }
+            return item
+          })
+      }
+
+      const filteredNav = filterNav(nav)
+
+      return h(
         CSidebarNav,
         {
           as: simplebar,
         },
         {
-          default: () => nav.map((item) => renderItem(item)),
+          default: () => filteredNav.map((item) => renderItem(item)),
         },
       )
+    }
   },
 })
 

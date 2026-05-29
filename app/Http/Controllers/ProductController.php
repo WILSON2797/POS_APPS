@@ -125,4 +125,42 @@ class ProductController extends Controller
             'filters'   => $request->only(['product_id', 'type', 'start_date', 'end_date'])
         ]);
     }
+
+    public function exportStockMovements(Request $request)
+    {
+        $query = StockMovement::with(['product:id,name,barcode', 'user:id,name']);
+
+        if ($request->filled('product_id')) {
+            $query->where('product_id', $request->input('product_id'));
+        }
+
+        if ($request->filled('type')) {
+            $query->where('type', $request->input('type'));
+        }
+
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $query->whereBetween('created_at', [
+                $request->input('start_date') . ' 00:00:00',
+                $request->input('end_date') . ' 23:59:59'
+            ]);
+        }
+
+        $movements = $query->latest()->get();
+
+        // Ambil nama toko
+        $settingsPath = storage_path('app/settings.json');
+        $brandName = config('app.name', 'POS Apps');
+        if (file_exists($settingsPath)) {
+            $settings = json_decode(file_get_contents($settingsPath), true);
+            $brandName = $settings['brand_name'] ?? $brandName;
+        }
+
+        $periode = 'Semua Periode';
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $periode = 'Periode: ' . date('d/m/Y', strtotime($request->input('start_date'))) . ' s/d ' . date('d/m/Y', strtotime($request->input('end_date')));
+        }
+
+        $export = new \App\Exports\StockMovementsExport($movements, $brandName, $periode);
+        return $export->download();
+    }
 }

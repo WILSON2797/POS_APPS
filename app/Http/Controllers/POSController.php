@@ -198,4 +198,118 @@ class POSController extends Controller
             ]);
         });
     }
+
+    public function salesReport(Request $request)
+    {
+        $query = Transaction::with(['customer', 'user', 'details']);
+
+        // Filter: Rentang Tanggal
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $query->whereBetween('created_at', [
+                $request->input('start_date') . ' 00:00:00',
+                $request->input('end_date') . ' 23:59:59'
+            ]);
+        }
+
+        // Filter: Metode Pembayaran
+        if ($request->filled('payment_method')) {
+            $query->where('payment_method', $request->input('payment_method'));
+        }
+
+        $transactions = $query->latest()->get();
+
+        $totalRevenue = 0;
+        $totalTax = 0;
+        $totalDiscount = 0;
+        $totalCost = 0;
+        $paymentStats = [
+            'cash' => 0,
+            'transfer' => 0,
+            'qris' => 0,
+            'e-wallet' => 0,
+        ];
+
+        foreach ($transactions as $tx) {
+            $totalRevenue += $tx->grand_total;
+            $totalTax += $tx->tax;
+            $totalDiscount += $tx->discount;
+            
+            if (isset($paymentStats[$tx->payment_method])) {
+                $paymentStats[$tx->payment_method] += $tx->grand_total;
+            }
+            
+            foreach ($tx->details as $detail) {
+                $totalCost += $detail->cost_price * $detail->qty;
+            }
+        }
+
+        $netRevenue = 0;
+        foreach ($transactions as $tx) {
+            $netRevenue += ($tx->subtotal - $tx->discount);
+        }
+        $totalProfit = $netRevenue - $totalCost;
+
+        return Inertia::render('Reports/Sales', [
+            'transactions' => $transactions->map(function ($tx) {
+                $txCost = $tx->details->sum(fn($d) => $d->cost_price * $d->qty);
+                $txProfit = ($tx->subtotal - $tx->discount) - $txCost;
+                return [
+                    'id' => $tx->id,
+                    'invoice_no' => $tx->invoice_no,
+                    'created_at' => $tx->created_at->format('d/m/Y H:i'),
+                    'customer' => $tx->customer?->name ?? 'Umum',
+                    'cashier' => $tx->user->name,
+                    'subtotal' => $tx->subtotal,
+                    'discount' => $tx->discount,
+                    'tax' => $tx->tax,
+                    'grand_total' => $tx->grand_total,
+                    'payment_method' => $tx->payment_method,
+                    'estimated_profit' => $txProfit,
+                ];
+            }),
+            'summary' => [
+                'total_sales' => $transactions->count(),
+                'total_revenue' => $totalRevenue,
+                'total_tax' => $totalTax,
+                'total_discount' => $totalDiscount,
+                'total_profit' => $totalProfit,
+                'payment_stats' => $paymentStats,
+            ],
+            'filters' => $request->only(['start_date', 'end_date', 'payment_method'])
+        ]);
+    }
+
+    public function exportSalesReport(Request $request)
+    {
+        $query = Transaction::with(['customer', 'user', 'details']);
+
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $query->whereBetween('created_at', [
+                $request->input('start_date') . ' 00:00:00',
+                $request->input('end_date') . ' 23:59:59'
+            ]);
+        }
+
+        if ($request->filled('payment_method')) {
+            $query->where('payment_method', $request->input('payment_method'));
+        }
+
+        $transactions = $query->latest()->get();
+
+        // Ambil nama toko
+        $settingsPath = storage_path('app/settings.json');
+        $brandName = config('app.name', 'POS Apps');
+        if (file_exists($settingsPath)) {
+            $settings = json_decode(file_get_contents($settingsPath), true);
+            $brandName = $settings['brand_name'] ?? $brandName;
+        }
+
+        $periode = 'Semua Periode';
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $periode = 'Periode: ' . date('d/m/Y', strtotime($request->input('start_date'))) . ' s/d ' . date('d/m/Y', strtotime($request->input('end_date')));
+        }
+
+        $export = new \App\Exports\SalesReportExport($transactions, $brandName, $periode);
+        return $export->download();
+    }
 }

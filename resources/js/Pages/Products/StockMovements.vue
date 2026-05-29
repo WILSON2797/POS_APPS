@@ -1,5 +1,5 @@
 <script setup>
-import { ref, h, watch } from 'vue'
+import { ref, h, watch, computed } from 'vue'
 import { router, Link } from '@inertiajs/vue3'
 import DefaultLayout from '@/Layouts/DefaultLayout.vue'
 import BaseDataTable from '@/Components/Base/BaseDataTable.vue'
@@ -59,12 +59,27 @@ const formatDateToYmd = (date) => {
 
 // Apply Filters function (server-side pre-filters)
 const applyFilters = () => {
-  router.get('/products/stock-movements', {
-    product_id: selectedProduct.value,
-    type: selectedType.value,
-    start_date: formatDateToYmd(startDate.value),
-    end_date: formatDateToYmd(endDate.value)
-  }, {
+  const query = {}
+  
+  if (selectedProduct.value) {
+    query.product_id = selectedProduct.value
+  }
+  
+  if (selectedType.value) {
+    query.type = selectedType.value
+  }
+  
+  const start = formatDateToYmd(startDate.value)
+  if (start) {
+    query.start_date = start
+  }
+  
+  const end = formatDateToYmd(endDate.value)
+  if (end) {
+    query.end_date = end
+  }
+
+  router.get('/products/stock-movements', query, {
     preserveState: true,
     preserveScroll: true
   })
@@ -81,6 +96,16 @@ const resetFilters = () => {
     preserveScroll: true
   })
 }
+
+// Compute dynamic export URL with active filters
+const exportUrl = computed(() => {
+  const params = new URLSearchParams()
+  if (selectedProduct.value) params.append('product_id', selectedProduct.value)
+  if (selectedType.value) params.append('type', selectedType.value)
+  if (startDate.value) params.append('start_date', formatDateToYmd(startDate.value))
+  if (endDate.value) params.append('end_date', formatDateToYmd(endDate.value))
+  return `/products/stock-movements/export?${params.toString()}`
+})
 
 // TanStack Table Column Definitions
 const columns = [
@@ -215,11 +240,17 @@ const columns = [
         </h3>
         <p class="text-body-secondary m-0 mt-1">Pantau rekaman pergerakan masuk, keluar, dan penyesuaian stok produk secara mendetail.</p>
       </div>
-      <!-- Tombol Kembali Ke Produk -->
-      <Link href="/products" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-2 px-3 py-2 fw-semibold">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-        Kembali ke Produk
-      </Link>
+      <!-- Tombol Aksi Header -->
+      <div class="d-flex align-items-center gap-2">
+        <a :href="exportUrl" class="btn btn-success text-white btn-sm d-flex align-items-center gap-2 px-3 py-2 fw-semibold">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          Ekspor Excel
+        </a>
+        <Link href="/products" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-2 px-3 py-2 fw-semibold">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+          Kembali ke Produk
+        </Link>
+      </div>
     </div>
 
     <!-- Filter Card Premium (Glassmorphism & Sleek) -->

@@ -1,5 +1,5 @@
 <script setup>
-import { router, usePage } from '@inertiajs/vue3'
+import { router, usePage, Link } from '@inertiajs/vue3'
 
 const page = usePage()
 
@@ -19,7 +19,7 @@ const logout = () => {
       <CDropdownHeader component="h6" class="bg-body-secondary fw-semibold mb-2 rounded-top">
         Account
       </CDropdownHeader>
-      <CDropdownItem href="/profile" class="d-flex align-items-center">
+      <CDropdownItem :component="Link" href="/profile" class="d-flex align-items-center">
         <CIcon icon="cil-user" class="me-2" /> Profile
       </CDropdownItem>
       <CDropdownDivider />

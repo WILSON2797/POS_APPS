@@ -9,6 +9,8 @@ use App\Http\Controllers\ProductController;
 use App\Http\Controllers\POSController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\GoodsReceiptController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
 // Guest routes
@@ -22,6 +24,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
     Route::get('/', fn () => redirect('/dashboard'));
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    
+    // Profile settings
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
 
     // POS Kasir - Admin & Kasir
     Route::middleware('role:admin,kasir')->group(function () {
@@ -34,8 +40,17 @@ Route::middleware('auth')->group(function () {
     Route::middleware('role:admin')->group(function () {
         Route::resource('categories', CategoryController::class)->except('show', 'create', 'edit');
         Route::resource('suppliers', SupplierController::class)->except('show', 'create', 'edit');
+        
+        Route::post('/users/{user}/toggle-status', [UserController::class, 'toggleStatus'])->name('users.toggle-status');
+        Route::resource('users', UserController::class)->except('show', 'create', 'edit');
+
+        Route::get('/products/stock-movements/export', [ProductController::class, 'exportStockMovements'])->name('products.stock-movements.export');
         Route::get('/products/stock-movements', [ProductController::class, 'stockMovements'])->name('products.stock-movements');
         Route::resource('products', ProductController::class)->except('show', 'create', 'edit');
+        
+        Route::get('/reports/sales/export', [POSController::class, 'exportSalesReport'])->name('reports.sales.export');
+        Route::get('/reports/sales', [POSController::class, 'salesReport'])->name('reports.sales');
+        
         Route::resource('goods-receipts', GoodsReceiptController::class)->only('index', 'create', 'store', 'show');
         Route::get('/settings/logo', [SettingController::class, 'logo'])->name('settings.logo');
         Route::post('/settings/upload-logo', [SettingController::class, 'uploadLogo'])->name('settings.upload-logo');

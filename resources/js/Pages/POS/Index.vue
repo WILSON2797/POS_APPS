@@ -1,13 +1,13 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
-import { useForm } from "@inertiajs/vue3";
+import { useForm, usePage } from "@inertiajs/vue3";
 import DefaultLayout from "@/Layouts/DefaultLayout.vue";
 import BaseButton from "@/Components/Base/BaseButton.vue";
 import BaseSelect from "@/Components/Base/BaseSelect.vue";
 import BaseInput from "@/Components/Base/BaseInput.vue";
 import BaseModal from "@/Components/Base/BaseModal.vue";
-import { usePage } from "@inertiajs/vue3";
 import { useCartStore } from "@/stores/cart";
+import { useSidebarStore } from "@/stores/sidebar.js";
 defineOptions({ layout: DefaultLayout });
 const props = defineProps({
     products: Array,
@@ -16,6 +16,7 @@ const props = defineProps({
 });
 const page = usePage();
 const cartStore = useCartStore();
+const sidebarStore = useSidebarStore();
 const { showConfirm, showSuccess, showError } = window;
 // Filter and search products state
 const searchQuery = ref("");
@@ -23,6 +24,7 @@ const selectedCategoryId = ref("");
 // Cart Drawer Slide-Over & Bouncing States (Shopee Style)
 const isDrawerOpen = ref(false);
 const isCartBouncing = ref(false);
+const currentStep = ref(1); // 1 = Cart & Details, 2 = Payment Options & Checkout
 // Active row toggle for inline discount/notes (Shopee Style)
 const activeEditRow = ref({}); // productId -> 'discount' | 'note' | null
 
@@ -59,16 +61,16 @@ watch(searchQuery, (newVal) => {
 
     // Find if there is an exact barcode match in products list
     const exactProduct = props.products.find(
-        (p) => p.barcode && p.barcode.toLowerCase() === query
+        (p) => p.barcode && p.barcode.toLowerCase() === query,
     );
 
     if (exactProduct) {
         // Grab the card element synchronously while it is still filtered in the DOM
         const cardEl = document.querySelector(".product-pos-card");
-        
+
         // Clear search input instantly to prevent double scans/triggers
         searchQuery.value = "";
-        
+
         // Add to cart with the premium Shopee flying animation
         addToCart(exactProduct, cardEl);
     }
@@ -80,7 +82,7 @@ function handleSearchEnter() {
     if (!query) return;
 
     const exactProduct = props.products.find(
-        (p) => p.barcode && p.barcode.toLowerCase() === query
+        (p) => p.barcode && p.barcode.toLowerCase() === query,
     );
 
     if (exactProduct) {
@@ -117,25 +119,25 @@ function addToCart(p, eventOrElement) {
     const cartItem = cartStore.items.find((i) => i.product.id === p.id);
     const flyingQty = pendingCartAdds.value[p.id] || 0;
     const currentQty = (cartItem ? cartItem.qty : 0) + flyingQty;
-    
+
     if (p.stock <= currentQty) {
         showError(
             `Stok produk "${p.name}" tidak mencukupi (Tersedia ${p.stock}).`,
         );
         return;
     }
-    
+
     // Trigger Flying Animation ala Shopee
     if (eventOrElement) {
         // Increment pending count immediately to lock the stock during flight
         pendingCartAdds.value[p.id] = (pendingCartAdds.value[p.id] || 0) + 1;
-        
+
         triggerFlyAnimation(eventOrElement, p.image, () => {
             // Decrement pending count
             if (pendingCartAdds.value[p.id] > 0) {
                 pendingCartAdds.value[p.id]--;
             }
-            
+
             // Add to cart only when animation completes
             cartStore.addItem(p);
             // Trigger bounce animation on floating button
@@ -160,21 +162,34 @@ function triggerFlyAnimation(eventOrElement, imagePath, onComplete) {
         if (eventOrElement.nodeType === 1) {
             card = eventOrElement; // Already an HTML element
         } else if (eventOrElement.currentTarget || eventOrElement.target) {
-            card = eventOrElement.currentTarget?.closest(".product-pos-card") || eventOrElement.target?.closest(".product-pos-card");
+            card =
+                eventOrElement.currentTarget?.closest(".product-pos-card") ||
+                eventOrElement.target?.closest(".product-pos-card");
         }
     }
     if (!card) return;
-    
+
     const img = card.querySelector("img");
-    const cartBtn = document.getElementById("pos-cart-btn");
-    if (!cartBtn) return;
+    let targetEl = document.getElementById("pos-cart-btn");
     
-    const startRect = img ? img.getBoundingClientRect() : card.getBoundingClientRect();
-    const targetRect = cartBtn.getBoundingClientRect();
-    
+    // Fallback to drawer header cart icon on desktop if floating button is hidden
+    if (targetEl) {
+        const rect = targetEl.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) {
+            const headerIcon = document.querySelector(".drawer-header svg.feather");
+            if (headerIcon) targetEl = headerIcon;
+        }
+    }
+    if (!targetEl) return;
+
+    const startRect = img
+        ? img.getBoundingClientRect()
+        : card.getBoundingClientRect();
+    const targetRect = targetEl.getBoundingClientRect();
+
     const flyer = document.createElement("div");
     flyer.className = "cart-flyer-item";
-    
+
     if (imagePath) {
         flyer.style.backgroundImage = `url('/storage/${imagePath}')`;
     } else {
@@ -188,7 +203,7 @@ function triggerFlyAnimation(eventOrElement, imagePath, onComplete) {
         miniBox.innerText = "📦";
         flyer.appendChild(miniBox);
     }
-    
+
     const startSize = 54; // Premium larger start size for awesome visibility
     flyer.style.width = `${startSize}px`;
     flyer.style.height = `${startSize}px`;
@@ -196,81 +211,88 @@ function triggerFlyAnimation(eventOrElement, imagePath, onComplete) {
     flyer.style.zIndex = "99999";
     flyer.style.borderRadius = "50%";
     flyer.style.pointerEvents = "none";
-    flyer.style.boxShadow = "0 8px 24px rgba(59, 130, 246, 0.45), 0 0 0 2.5px #ffffff";
+    flyer.style.boxShadow =
+        "0 8px 24px rgba(59, 130, 246, 0.45), 0 0 0 2.5px #ffffff";
     flyer.style.willChange = "transform, opacity, left, top";
-    
+
     document.body.appendChild(flyer);
-    
+
     // Core physics calculations for parabolic bezier trajectory (Shopee Style)
     const startX = startRect.left + startRect.width / 2;
     const startY = startRect.top + startRect.height / 2;
     const targetX = targetRect.left + targetRect.width / 2;
     const targetY = targetRect.top + targetRect.height / 2;
-    
+
     // Control Point pushes the flight path 220px higher into a gorgeous parabola
     const controlX = (startX + targetX) / 2;
-    const controlY = Math.min(startY, targetY) - 220; 
-    
+    const controlY = Math.min(startY, targetY) - 220;
+
     const duration = 700; // ms (perfect timing for a luxurious arc)
     const startTime = performance.now();
-    
+
     function animate(currentTime) {
         const elapsed = currentTime - startTime;
         const t = Math.min(elapsed / duration, 1);
-        
+
         // Quadratic Bezier Formula: B(t) = (1-t)^2 * P0 + 2*(1-t)*t * P1 + t^2 * P2
-        const x = (1 - t) * (1 - t) * startX + 2 * (1 - t) * t * controlX + t * t * targetX;
-        const y = (1 - t) * (1 - t) * startY + 2 * (1 - t) * t * controlY + t * t * targetY;
-        
+        const x =
+            (1 - t) * (1 - t) * startX +
+            2 * (1 - t) * t * controlX +
+            t * t * targetX;
+        const y =
+            (1 - t) * (1 - t) * startY +
+            2 * (1 - t) * t * controlY +
+            t * t * targetY;
+
         // Scale down from 1.0 to 0.15, fade out slightly towards the end
         const scale = 1 - t * 0.85;
-        const opacity = t > 0.8 ? 1 - (t - 0.8) / 0.2 : 1; 
-        
+        const opacity = t > 0.8 ? 1 - (t - 0.8) / 0.2 : 1;
+
         flyer.style.left = `${x - startSize / 2}px`;
         flyer.style.top = `${y - startSize / 2}px`;
         flyer.style.transform = `scale(${scale}) rotate(${t * 360}deg)`; // Awesome rotation spin!
         flyer.style.opacity = opacity;
-        
+
         if (t < 1) {
             requestAnimationFrame(animate);
         } else {
             flyer.remove();
-            
-            // Trigger elegant springy bounce on cart
-            cartBtn.classList.add("cart-btn-pop");
+
+            // Trigger elegant springy bounce on cart target
+            targetEl.classList.add("cart-btn-pop");
             setTimeout(() => {
-                cartBtn.classList.remove("cart-btn-pop");
+                targetEl.classList.remove("cart-btn-pop");
             }, 450);
-            
+
             // Call completion callback
             if (onComplete) {
                 onComplete();
             }
         }
     }
-    
+
     requestAnimationFrame(animate);
 }
 
 // Format raw number to Indonesian/thousands dot separator
 const formatNumber = (val) => {
-    if (val === undefined || val === null || val === '') return '';
+    if (val === undefined || val === null || val === "") return "";
     // Strip everything except digits
-    const num = parseFloat(val.toString().replace(/[^0-9.-]/g, ''));
-    if (isNaN(num)) return '';
-    return new Intl.NumberFormat('id-ID').format(num);
+    const num = parseFloat(val.toString().replace(/[^0-9.-]/g, ""));
+    if (isNaN(num)) return "";
+    return new Intl.NumberFormat("id-ID").format(num);
 };
 
 // FIX #2: Tambahkan validasi stok dan tipe data
 function handleQtyChange(productId, qty) {
     const item = cartStore.items.find((i) => i.product.id === productId);
     if (!item) return;
-    
+
     // Strip dots/thousands separator and parse to integer
-    const cleanValue = String(qty).replace(/[^0-9]/g, '');
+    const cleanValue = String(qty).replace(/[^0-9]/g, "");
     let parsed = parseInt(cleanValue, 10);
     if (isNaN(parsed) || parsed < 1) parsed = 1;
-    
+
     if (parsed > item.product.stock) {
         showError(
             `Stok "${item.product.name}" tidak mencukupi (maks: ${item.product.stock}).`,
@@ -349,6 +371,7 @@ async function processCheckout() {
             cartStore.removeSelectedItems();
             cartStore.setAmountPaid(0);
             isDrawerOpen.value = false; // Auto close drawer after successful sale
+            currentStep.value = 1; // Reset to step 1
         },
         onError: (err) => {
             showError(Object.values(err)[0] || "Gagal memproses transaksi.");
@@ -436,6 +459,7 @@ async function confirmClearCart() {
     });
     if (result.isConfirmed) {
         cartStore.clearCart();
+        currentStep.value = 1; // Reset to step 1
         showSuccess("Keranjang berhasil dikosongkan.");
     }
 }
@@ -509,13 +533,24 @@ function handleHotkeys(e) {
         isDrawerOpen.value = !isDrawerOpen.value; // F2 toggles the beautiful cart drawer
     } else if (e.key === "F4") {
         e.preventDefault();
-        processCheckout();
+        if (currentStep.value === 1) {
+            const selectedItems = cartStore.items.filter((item) => item.selected);
+            if (selectedItems.length === 0) {
+                showError("Tidak ada item terpilih untuk dibayar.");
+            } else {
+                currentStep.value = 2;
+            }
+        } else {
+            processCheckout();
+        }
     } else if (e.key === "F7") {
         e.preventDefault();
         cartStore.clearCart();
     }
 }
 onMounted(() => {
+    // Hide left sidebar by default on loading POS page to maximize screen space
+    sidebarStore.visible = false;
     window.addEventListener("keydown", handleHotkeys);
     // Otomatis fokuskan kursor ke kolom pencarian/scan saat halaman dimuat (Scanner Ready!)
     setTimeout(() => {
@@ -532,9 +567,9 @@ onUnmounted(() => {
 
 // State reaktif untuk mengontrol scanner kamera
 const isCameraModalOpen = ref(false); // Buka/tutup modal kamera
-const cameraDevices = ref([]);       // Daftar semua kamera yang terdeteksi di device
-const activeCameraId = ref("");      // ID kamera aktif saat ini yang sedang digunakan
-let html5QrcodeInstance = null;      // Menyimpan instance library Html5Qrcode
+const cameraDevices = ref([]); // Daftar semua kamera yang terdeteksi di device
+const activeCameraId = ref(""); // ID kamera aktif saat ini yang sedang digunakan
+let html5QrcodeInstance = null; // Menyimpan instance library Html5Qrcode
 
 // Fungsi untuk memfokuskan kursor ke input pencarian (Sangat penting untuk scanner fisik Kabel/Bluetooth)
 function focusSearchInput() {
@@ -548,7 +583,9 @@ function focusSearchInput() {
 // Fungsi untuk membunyikan suara beep sukses secara instan memakai Web Audio API browser (Kinerja sangat cepat & offline-friendly)
 function playBeepSound() {
     try {
-        const context = new (window.AudioContext || window.webkitAudioContext)();
+        const context = new (
+            window.AudioContext || window.webkitAudioContext
+        )();
         const oscillator = context.createOscillator();
         const gainNode = context.createGain();
         oscillator.connect(gainNode);
@@ -557,7 +594,7 @@ function playBeepSound() {
         oscillator.frequency.value = 1000; // Frekuensi nada tinggi (Hz)
         gainNode.gain.setValueAtTime(0, context.currentTime);
         gainNode.gain.linearRampToValueAtTime(0.3, context.currentTime + 0.05); // Nada masuk cepat
-        gainNode.gain.linearRampToValueAtTime(0, context.currentTime + 0.15);  // Nada keluar cepat
+        gainNode.gain.linearRampToValueAtTime(0, context.currentTime + 0.15); // Nada keluar cepat
         oscillator.start();
         oscillator.stop(context.currentTime + 0.15); // Suara mati otomatis dalam 150ms
     } catch (e) {
@@ -575,7 +612,12 @@ function loadHtml5Qrcode() {
         const script = document.createElement("script");
         script.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
         script.onload = () => resolve(window.Html5Qrcode);
-        script.onerror = () => reject(new Error("Gagal mengunduh pustaka scanner kamera. Periksa koneksi internet."));
+        script.onerror = () =>
+            reject(
+                new Error(
+                    "Gagal mengunduh pustaka scanner kamera. Periksa koneksi internet.",
+                ),
+            );
         document.head.appendChild(script);
     });
 }
@@ -584,23 +626,24 @@ function loadHtml5Qrcode() {
 async function openCameraScanner() {
     try {
         isCameraModalOpen.value = true;
-        
+
         // Memuat pustaka pendeteksi barcode
         await loadHtml5Qrcode();
-        
+
         // Mengambil daftar kamera yang tersedia di HP/Laptop/Tablet
         const devices = await Html5Qrcode.getCameras();
         if (devices && devices.length > 0) {
             cameraDevices.value = devices;
-            
+
             // Mencoba mendeteksi kamera belakang (back/rear) untuk hasil scan barcode yang optimal
-            const rearCamera = devices.find(d => 
-                d.label.toLowerCase().includes('back') || 
-                d.label.toLowerCase().includes('rear') ||
-                d.label.toLowerCase().includes('belakang')
+            const rearCamera = devices.find(
+                (d) =>
+                    d.label.toLowerCase().includes("back") ||
+                    d.label.toLowerCase().includes("rear") ||
+                    d.label.toLowerCase().includes("belakang"),
             );
             activeCameraId.value = rearCamera ? rearCamera.id : devices[0].id;
-            
+
             // Menjalankan streaming kamera
             startScanning();
         } else {
@@ -617,11 +660,14 @@ async function openCameraScanner() {
 function startScanning() {
     if (html5QrcodeInstance) {
         // Hentikan instance scanner aktif lama sebelum memulai yang baru (Menghindari tabrakan memori)
-        html5QrcodeInstance.stop().then(() => {
-            initializeScanner();
-        }).catch(() => {
-            initializeScanner();
-        });
+        html5QrcodeInstance
+            .stop()
+            .then(() => {
+                initializeScanner();
+            })
+            .catch(() => {
+                initializeScanner();
+            });
     } else {
         initializeScanner();
     }
@@ -630,41 +676,45 @@ function startScanning() {
 // Melakukan inisialisasi modul scanner dan memetakan kamera ke elemen DOM preview
 function initializeScanner() {
     html5QrcodeInstance = new Html5Qrcode("camera-scanner-preview");
-    
+
     const config = {
         fps: 15, // Frame-per-second optimal untuk pemindaian
-        qrbox: { width: 280, height: 160 } // Dimensi kotak bidik horizontal yang pas untuk EAN-13 / UPC barcode
+        qrbox: { width: 280, height: 160 }, // Dimensi kotak bidik horizontal yang pas untuk EAN-13 / UPC barcode
     };
-    
-    html5QrcodeInstance.start(
-        activeCameraId.value,
-        config,
-        (decodedText) => {
-            // Callback sukses ketika barcode terbaca
-            handleCameraScanSuccess(decodedText);
-        },
-        () => {
-            // Frame gagal diabaikan diam-diam agar proses loop pemindaian tetap lancar & ringan
-        }
-    ).catch(err => {
-        console.error("Gagal menginisialisasi kamera:", err);
-    });
+
+    html5QrcodeInstance
+        .start(
+            activeCameraId.value,
+            config,
+            (decodedText) => {
+                // Callback sukses ketika barcode terbaca
+                handleCameraScanSuccess(decodedText);
+            },
+            () => {
+                // Frame gagal diabaikan diam-diam agar proses loop pemindaian tetap lancar & ringan
+            },
+        )
+        .catch((err) => {
+            console.error("Gagal menginisialisasi kamera:", err);
+        });
 }
 
 // Menangani data barcode hasil scan kamera yang berhasil dideteksi
 function handleCameraScanSuccess(barcodeText) {
     playBeepSound(); // Bunyikan umpan balik suara scan sukses
-    
+
     // Cari produk di katalog yang barcodenya cocok secara tepat
     const exactProduct = props.products.find(
-        (p) => p.barcode && p.barcode.toLowerCase() === barcodeText.trim().toLowerCase()
+        (p) =>
+            p.barcode &&
+            p.barcode.toLowerCase() === barcodeText.trim().toLowerCase(),
     );
-    
+
     if (exactProduct) {
         // Hentikan stream kamera dan tutup modal
         closeCameraScanner();
         showSuccess(`Scan Sukses: ${exactProduct.name}`);
-        
+
         // Memicu Shopee flying animation dari area katalog produk menuju keranjang
         setTimeout(() => {
             const cardEl = document.querySelector(".product-pos-card");
@@ -679,12 +729,15 @@ function handleCameraScanSuccess(barcodeText) {
 function closeCameraScanner() {
     isCameraModalOpen.value = false;
     if (html5QrcodeInstance) {
-        html5QrcodeInstance.stop().then(() => {
-            html5QrcodeInstance = null;
-        }).catch(err => {
-            console.error("Gagal menghentikan kamera secara bersih:", err);
-            html5QrcodeInstance = null;
-        });
+        html5QrcodeInstance
+            .stop()
+            .then(() => {
+                html5QrcodeInstance = null;
+            })
+            .catch((err) => {
+                console.error("Gagal menghentikan kamera secara bersih:", err);
+                html5QrcodeInstance = null;
+            });
     }
 }
 
@@ -706,8 +759,8 @@ const fmtNoSymbol = (v) =>
 <template>
     <div class="pos-page pos-layout p-1">
         <div class="row g-3">
-            <!-- ── Katalog Produk (100% Lebar Layar untuk Area Kerja Maksimal) ── -->
-            <div class="col-12">
+            <!-- ── Katalog Produk (Split-screen on Desktop) ── -->
+            <div class="col-12 col-lg-7 col-xl-8">
                 <CCard class="border-0 shadow-sm">
                     <CCardHeader class="bg-white border-bottom-0 py-3">
                         <div class="row g-2 align-items-center">
@@ -730,47 +783,158 @@ const fmtNoSymbol = (v) =>
                                         v-model="searchQuery"
                                         type="text"
                                         class="form-control w-100"
-                                        style="height: 40px; font-size: 14px; padding-left: 48px; padding-right: 76px;"
+                                        style="
+                                            height: 40px;
+                                            font-size: 14px;
+                                            padding-left: 48px;
+                                            padding-right: 76px;
+                                        "
                                         placeholder="Cari nama / scan SKU (F1)..."
                                         @keydown.enter="handleSearchEnter"
                                     />
                                     <!-- Ikon Kaca Pembesar di Sisi Kiri Input (Terpusat Sempurna & Spacing Premium) -->
                                     <!-- Catatan: Class 'start-0' sengaja dihapus agar tidak berbenturan dengan aturan '!important' di CSS Global / Bootstrap -->
-                                    <span class="position-absolute d-flex align-items-center justify-content-center text-secondary" style="pointer-events: none; left: 20px; top: 0; bottom: 0; height: 100%;">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="feather"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                                    <span
+                                        class="position-absolute d-flex align-items-center justify-content-center text-secondary"
+                                        style="
+                                            pointer-events: none;
+                                            left: 20px;
+                                            top: 0;
+                                            bottom: 0;
+                                            height: 100%;
+                                        "
+                                    >
+                                        <svg
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            width="16"
+                                            height="16"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2.5"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            class="feather"
+                                        >
+                                            <circle
+                                                cx="11"
+                                                cy="11"
+                                                r="8"
+                                            ></circle>
+                                            <line
+                                                x1="21"
+                                                y1="21"
+                                                x2="16.65"
+                                                y2="16.65"
+                                            ></line>
+                                        </svg>
                                     </span>
                                     <!-- Tombol Pemicu di Sisi Kanan Input (Terpusat Sempurna) -->
-                                    <div class="position-absolute end-0 d-flex align-items-center gap-1 pe-2" style="z-index: 10; top: 0; bottom: 0; height: 100%;">
+                                    <div
+                                        class="position-absolute end-0 d-flex align-items-center gap-1 pe-2"
+                                        style="
+                                            z-index: 10;
+                                            top: 0;
+                                            bottom: 0;
+                                            height: 100%;
+                                        "
+                                    >
                                         <!-- Tombol Indikator Status & Fokus untuk Scanner Fisik (Kabel/Bluetooth) -->
                                         <button
                                             type="button"
                                             class="btn btn-sm btn-light p-1 d-flex align-items-center justify-content-center border-0 rounded-circle position-relative"
-                                            style="width: 28px; height: 28px;"
+                                            style="width: 28px; height: 28px"
                                             title="Status Scanner Fisik Ready. Klik untuk memfokuskan kursor."
                                             @click="focusSearchInput"
                                         >
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather"><path d="M5 18H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2"></path><path d="M19 6h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2"></path><line x1="12" y1="6" x2="12" y2="18"></line><line x1="8" y1="6" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="18"></line></svg>
+                                            <svg
+                                                xmlns="http://www.w3.org/2000/svg"
+                                                width="16"
+                                                height="16"
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                                class="feather"
+                                            >
+                                                <path
+                                                    d="M5 18H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2"
+                                                ></path>
+                                                <path
+                                                    d="M19 6h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2"
+                                                ></path>
+                                                <line
+                                                    x1="12"
+                                                    y1="6"
+                                                    x2="12"
+                                                    y2="18"
+                                                ></line>
+                                                <line
+                                                    x1="8"
+                                                    y1="6"
+                                                    x2="8"
+                                                    y2="18"
+                                                ></line>
+                                                <line
+                                                    x1="16"
+                                                    y1="6"
+                                                    x2="16"
+                                                    y2="18"
+                                                ></line>
+                                            </svg>
                                             <!-- Titik Lampu Hijau Berkedip Menandakan Scanner Aktif & Fokus -->
-                                            <span class="position-absolute top-0 end-0 translate-middle badge rounded-circle bg-success border border-white p-1 pulse-animation" style="transform: translate(-10%, 25%) !important;">
-                                                <span class="visually-hidden">Ready</span>
+                                            <span
+                                                class="position-absolute top-0 end-0 translate-middle badge rounded-circle bg-success border border-white p-1 pulse-animation"
+                                                style="
+                                                    transform: translate(
+                                                        -10%,
+                                                        25%
+                                                    ) !important;
+                                                "
+                                            >
+                                                <span class="visually-hidden"
+                                                    >Ready</span
+                                                >
                                             </span>
                                         </button>
                                         <!-- Tombol Pemicu Scanner Kamera Device (Webcam/HP) -->
                                         <button
                                             type="button"
                                             class="btn btn-sm btn-light p-1 d-flex align-items-center justify-content-center border-0 rounded-circle text-primary"
-                                            style="width: 28px; height: 28px;"
+                                            style="width: 28px; height: 28px"
                                             title="Scan Barcode via Kamera Device"
                                             @click="openCameraScanner"
                                         >
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                                            <svg
+                                                xmlns="http://www.w3.org/2000/svg"
+                                                width="16"
+                                                height="16"
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                                class="feather"
+                                            >
+                                                <path
+                                                    d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"
+                                                ></path>
+                                                <circle
+                                                    cx="12"
+                                                    cy="13"
+                                                    r="4"
+                                                ></circle>
+                                            </svg>
                                         </button>
                                     </div>
                                 </div>
                                 <button
                                     id="pos-cart-btn"
                                     type="button"
-                                    class="btn btn-primary d-flex align-items-center gap-2 px-3 position-relative flex-shrink-0"
+                                    class="btn btn-primary d-lg-none d-flex align-items-center gap-2 px-3 position-relative flex-shrink-0"
                                     style="
                                         height: 40px;
                                         border-radius: 8px;
@@ -879,18 +1043,47 @@ const fmtNoSymbol = (v) =>
                                             class="card-img-top object-fit-contain w-100 h-100 p-2"
                                             :alt="p.name"
                                         />
-                                        <div 
-                                            v-else 
+                                        <div
+                                            v-else
                                             class="w-100 h-100 d-flex flex-column align-items-center justify-content-center premium-no-image-placeholder"
                                         >
-                                            <div class="placeholder-icon-wrapper d-flex align-items-center justify-content-center mb-1">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="feather">
-                                                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                                                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-                                                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                                            <div
+                                                class="placeholder-icon-wrapper d-flex align-items-center justify-content-center mb-1"
+                                            >
+                                                <svg
+                                                    xmlns="http://www.w3.org/2000/svg"
+                                                    width="22"
+                                                    height="22"
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    stroke-width="2.2"
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    class="feather"
+                                                >
+                                                    <path
+                                                        d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"
+                                                    ></path>
+                                                    <polyline
+                                                        points="3.27 6.96 12 12.01 20.73 6.96"
+                                                    ></polyline>
+                                                    <line
+                                                        x1="12"
+                                                        y1="22.08"
+                                                        x2="12"
+                                                        y2="12"
+                                                    ></line>
                                                 </svg>
                                             </div>
-                                            <span class="placeholder-text text-secondary fw-semibold font-monospace" style="font-size: 10px; letter-spacing: 0.5px;">NO PHOTO</span>
+                                            <span
+                                                class="placeholder-text text-secondary fw-semibold font-monospace"
+                                                style="
+                                                    font-size: 10px;
+                                                    letter-spacing: 0.5px;
+                                                "
+                                                >NO PHOTO</span
+                                            >
                                         </div>
                                     </div>
                                     <div
@@ -912,13 +1105,42 @@ const fmtNoSymbol = (v) =>
                                                 }}</span
                                             >
                                             <!-- Shopee-Style Add to Cart Floating Button -->
-                                            <button 
+                                            <button
                                                 class="btn btn-primary btn-sm rounded-circle p-0 d-flex align-items-center justify-content-center add-to-cart-btn"
-                                                style="width: 26px; height: 26px;"
-                                                @click.stop="addToCart(p, $event)"
+                                                style="
+                                                    width: 26px;
+                                                    height: 26px;
+                                                "
+                                                @click.stop="
+                                                    addToCart(p, $event)
+                                                "
                                                 title="Tambah ke Keranjang"
                                             >
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" class="feather"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                                <svg
+                                                    xmlns="http://www.w3.org/2000/svg"
+                                                    width="12"
+                                                    height="12"
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    stroke-width="3.5"
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    class="feather"
+                                                >
+                                                    <line
+                                                        x1="12"
+                                                        y1="5"
+                                                        x2="12"
+                                                        y2="19"
+                                                    ></line>
+                                                    <line
+                                                        x1="5"
+                                                        y1="12"
+                                                        x2="19"
+                                                        y2="12"
+                                                    ></line>
+                                                </svg>
                                             </button>
                                         </div>
                                     </div>
@@ -942,17 +1164,17 @@ const fmtNoSymbol = (v) =>
                     </CCardBody>
                 </CCard>
             </div>
-        </div>
-        <!-- ── Slide-Over Cart Drawer Container (Shopee Style Laci Geser) ── -->
-        <div
-            class="cart-drawer-overlay"
-            :class="{ active: isDrawerOpen }"
-            @click.self="isDrawerOpen = false"
-        >
-            <div
-                class="cart-drawer-panel shadow-lg"
-                :class="{ open: isDrawerOpen }"
-            >
+            <!-- ── Slide-Over Cart Drawer Container (Shopee Style Laci Geser) ── -->
+            <div class="col-12 col-lg-5 col-xl-4">
+                <div
+                    class="cart-drawer-overlay"
+                    :class="{ active: isDrawerOpen }"
+                    @click.self="isDrawerOpen = false"
+                >
+                    <div
+                        class="cart-drawer-panel shadow-lg"
+                        :class="{ open: isDrawerOpen }"
+                    >
                 <!-- Drawer Header -->
                 <div
                     class="drawer-header px-3 py-3 border-bottom d-flex align-items-center justify-content-between bg-white"
@@ -1042,7 +1264,7 @@ const fmtNoSymbol = (v) =>
                         </button>
                         <button
                             type="button"
-                            class="btn btn-light rounded-circle p-1 ms-2 d-flex align-items-center justify-content-center"
+                            class="btn btn-light rounded-circle p-1 ms-2 d-lg-none d-flex align-items-center justify-content-center"
                             style="width: 32px; height: 32px"
                             @click="isDrawerOpen = false"
                         >
@@ -1133,7 +1355,7 @@ const fmtNoSymbol = (v) =>
                         <div
                             v-for="item in cartStore.items"
                             :key="item.product.id"
-                            class="cart-item-row p-3 mb-2 bg-white border border-light rounded shadow-sm"
+                            class="cart-item-row p-2 mb-2 bg-white border border-light rounded shadow-sm"
                         >
                             <div class="d-flex align-items-start gap-2">
                                 <!-- Checkbox Selection -->
@@ -1149,7 +1371,7 @@ const fmtNoSymbol = (v) =>
                                 />
                                 <!-- Product Image (Compact but clear) -->
                                 <div
-                                    class="cart-item-img flex-shrink-0 bg-light rounded d-flex align-items-center justify-content-center overflow-hidden border border-light"
+                                    class="cart-item-img d-none d-xl-flex flex-shrink-0 bg-light rounded d-flex align-items-center justify-content-center overflow-hidden border border-light"
                                     style="width: 48px; height: 48px"
                                 >
                                     <img
@@ -1233,7 +1455,7 @@ const fmtNoSymbol = (v) =>
                             </div>
                             <!-- Second Row: Controls & Total Price (Indented to line up with product details) -->
                             <div
-                                class="d-flex justify-content-between align-items-center mt-2 pt-2 border-top border-light-subtle ps-5"
+                                class="d-flex justify-content-between align-items-center mt-1 pt-1 border-top border-light-subtle ps-3 ps-xl-5"
                             >
                                 <!-- Qty input controls -->
                                 <div
@@ -1325,7 +1547,7 @@ const fmtNoSymbol = (v) =>
                                 <div class="text-end">
                                     <span
                                         class="fw-bold text-dark"
-                                        style="font-size: 17px"
+                                        style="font-size: 15px"
                                         >{{
                                             fmt(
                                                 item.product.selling_price *
@@ -1345,7 +1567,7 @@ const fmtNoSymbol = (v) =>
                             </div>
                             <!-- Expandable Custom Discount & Note per Item Action Strip -->
                             <div
-                                class="d-flex gap-3 align-items-center mt-2 pt-1 ps-5 border-top-0"
+                                class="d-flex gap-3 align-items-center mt-1 pt-0.5 ps-3 ps-xl-5 border-top-0"
                             >
                                 <button
                                     type="button"
@@ -1593,7 +1815,7 @@ const fmtNoSymbol = (v) =>
                 >
                     <!-- Resizable Drag Handle Bar -->
                     <div
-                        class="footer-drag-handle d-flex justify-content-center align-items-center py-2"
+                        class="footer-drag-handle d-lg-none d-flex justify-content-center align-items-center py-2"
                         @mousedown="startDrag"
                         @touchstart="startDrag"
                     >
@@ -1604,197 +1826,244 @@ const fmtNoSymbol = (v) =>
                     <div
                         class="drawer-footer-content px-3 pb-3 flex-grow-1 overflow-y-auto"
                     >
-                        <div class="row g-2 mb-1 pos-compact-inputs">
-                            <div class="col-6">
-                                <!-- Customer Selection -->
-                                <BaseSelect
-                                    v-model="selectedCustomer"
-                                    label="Customer / Member"
-                                    :options="customers"
-                                    placeholder="Pilih Customer Umum"
-                                />
+
+                        <!-- Step Indicator -->
+                        <div class="d-flex border-bottom mb-3 text-center" style="font-size: 13px;">
+                            <div
+                                class="flex-fill py-2 fw-bold cursor-pointer transition-all"
+                                :class="currentStep === 1 ? 'text-primary border-bottom border-primary border-3' : 'text-secondary opacity-75'"
+                                @click="currentStep = 1"
+                            >
+                                🛒 Detail Belanja
                             </div>
-                            <div class="col-3">
-                                <BaseInput
-                                    label="Pajak (%)"
-                                    type="number"
-                                    size="sm"
-                                    :model-value="cartStore.taxRate"
-                                    @update:model-value="
-                                        cartStore.setTaxRate($event)
-                                    "
-                                />
-                            </div>
-                            <div class="col-3">
-                                <BaseInput
-                                    label="Diskon Transaksi"
-                                    type="number"
-                                    size="sm"
-                                    :model-value="cartStore.discountValue"
-                                    @update:model-value="
-                                        cartStore.setDiscount(
-                                            cartStore.discountType,
-                                            $event,
-                                        )
-                                    "
-                                />
+                            <div
+                                class="flex-fill py-2 fw-bold cursor-pointer transition-all"
+                                :class="currentStep === 2 ? 'text-primary border-bottom border-primary border-3' : 'text-secondary opacity-75'"
+                                @click="cartStore.items.filter(i => i.selected).length > 0 ? currentStep = 2 : null"
+                            >
+                                💳 Pembayaran
                             </div>
                         </div>
-                        <!-- Details Block -->
-                        <div class="bg-light p-2 px-3 rounded mb-2">
-                            <div
-                                class="d-flex justify-content-between mb-1 small text-secondary"
-                            >
-                                <span>Subtotal</span>
-                                <span>{{ fmt(cartStore.itemSubtotal) }}</span>
-                            </div>
-                            <div
-                                class="d-flex justify-content-between mb-1 small text-danger"
-                            >
-                                <span>Diskon Transaksi</span>
-                                <span
-                                    >-
-                                    {{
-                                        fmt(cartStore.transactionDiscountAmount)
-                                    }}</span
-                                >
-                            </div>
-                            <div
-                                class="d-flex justify-content-between mb-1 small text-secondary"
-                            >
-                                <span>Pajak ({{ cartStore.taxRate }}%)</span>
-                                <span>{{ fmt(cartStore.taxAmount) }}</span>
-                            </div>
-                            <hr class="my-2" />
-                            <div
-                                class="d-flex justify-content-between align-items-center"
-                            >
-                                <h5 class="fw-bold text-dark m-0">
-                                    Grand Total
-                                </h5>
-                                <h4 class="fw-bold text-primary m-0">
-                                    {{ fmt(cartStore.grandTotal) }}
-                                </h4>
-                            </div>
-                        </div>
-                        <!-- Payment Details -->
-                        <div class="mb-2">
-                            <label class="form-label fw-semibold small m-0 mb-1"
-                                >Metode Pembayaran</label
-                            >
-                            <div class="d-flex gap-1">
-                                <button
-                                    v-for="method in [
-                                        'cash',
-                                        'transfer',
-                                        'qris',
-                                        'e-wallet',
-                                    ]"
-                                    :key="method"
-                                    class="btn btn-sm py-1 flex-fill"
-                                    :class="
-                                        cartStore.paymentMethod === method
-                                            ? 'btn-primary'
-                                            : 'btn-outline-primary'
-                                    "
-                                    @click="cartStore.setPaymentMethod(method)"
-                                >
-                                    {{ method.toUpperCase() }}
-                                </button>
-                            </div>
-                        </div>
-                        <!-- Cash Input Panel -->
-                        <div
-                            v-if="cartStore.paymentMethod === 'cash'"
-                            class="mb-2 pos-compact-inputs"
-                        >
-                            <div class="row g-2 align-items-end">
-                                <div class="col-6">
-                                    <BaseInput
-                                        label="Jumlah Bayar (Rp)"
-                                        type="number"
-                                        size="sm"
-                                        :model-value="cartStore.amountPaid"
-                                        @update:model-value="
-                                            cartStore.setAmountPaid($event)
-                                        "
-                                        class="mb-0"
+
+                        <!-- Step 1: Cart Details & Calculations -->
+                        <div v-if="currentStep === 1">
+                            <div class="row g-2 mb-1 pos-compact-inputs">
+                                <div class="col-12 col-xl-6">
+                                    <!-- Customer Selection -->
+                                    <BaseSelect
+                                        v-model="selectedCustomer"
+                                        label="Customer / Member"
+                                        :options="customers"
+                                        placeholder="Pilih Customer Umum"
                                     />
                                 </div>
-                                <div class="col-6">
-                                    <label
-                                        class="form-label d-block mb-1"
-                                        style="
-                                            visibility: hidden;
-                                            font-size: 11px;
-                                            margin-bottom: 0.15rem !important;
+                                <div class="col-6 col-xl-3">
+                                    <BaseInput
+                                        label="Pajak (%)"
+                                        type="number"
+                                        size="sm"
+                                        :model-value="cartStore.taxRate"
+                                        @update:model-value="
+                                            cartStore.setTaxRate($event)
                                         "
-                                        >&nbsp;</label
+                                    />
+                                </div>
+                                <div class="col-6 col-xl-3">
+                                    <BaseInput
+                                        label="Diskon Transaksi"
+                                        type="number"
+                                        size="sm"
+                                        :model-value="cartStore.discountValue"
+                                        @update:model-value="
+                                            cartStore.setDiscount(
+                                                cartStore.discountType,
+                                                $event,
+                                            )
+                                        "
+                                    />
+                                </div>
+                            </div>
+                            <!-- Details Block -->
+                            <div class="bg-light p-2 px-3 rounded mb-2">
+                                <div
+                                    class="d-flex justify-content-between mb-1 text-secondary"
+                                    style="font-size: 12.5px;"
+                                >
+                                    <span>Subtotal</span>
+                                    <span>{{ fmt(cartStore.itemSubtotal) }}</span>
+                                </div>
+                                <div
+                                    class="d-flex justify-content-between mb-1 text-danger"
+                                    style="font-size: 12.5px;"
+                                >
+                                    <span>Diskon Transaksi</span>
+                                    <span>- {{ fmt(cartStore.transactionDiscountAmount) }}</span>
+                                </div>
+                                <div
+                                    class="d-flex justify-content-between mb-1 text-secondary"
+                                    style="font-size: 12.5px;"
+                                >
+                                    <span>Pajak ({{ cartStore.taxRate }}%)</span>
+                                    <span>{{ fmt(cartStore.taxAmount) }}</span>
+                                </div>
+                                <hr class="my-2" />
+                                <div
+                                    class="d-flex justify-content-between align-items-center"
+                                >
+                                    <span class="fw-bold text-dark" style="font-size: 14.5px;">
+                                        Grand Total
+                                    </span>
+                                    <span class="fw-bold text-primary font-monospace" style="font-size: 20px;">
+                                        {{ fmt(cartStore.grandTotal) }}
+                                    </span>
+                                </div>
+                            </div>
+                            <!-- Action Buttons Step 1 -->
+                            <div class="row g-2 mt-3">
+                                <div class="col-4">
+                                    <BaseButton
+                                        variant="outline-danger"
+                                        block
+                                        title="Kosongkan Keranjang (F7)"
+                                        @click="confirmClearCart"
                                     >
+                                        Reset
+                                    </BaseButton>
+                                </div>
+                                <div class="col-8">
+                                    <BaseButton
+                                        variant="primary"
+                                        block
+                                        :disabled="cartStore.items.filter(i => i.selected).length === 0"
+                                        title="Lanjut ke Pembayaran"
+                                        @click="currentStep = 2"
+                                    >
+                                        Lanjut Pembayaran ➔
+                                    </BaseButton>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step 2: Payment Details & Finalize -->
+                        <div v-else-if="currentStep === 2">
+                            <!-- Prominent grand total block -->
+                            <div class="text-center bg-primary bg-opacity-10 border border-primary border-opacity-25 rounded p-3 mb-3">
+                                <span class="small text-secondary fw-semibold d-block" style="font-size: 11px; letter-spacing: 0.5px;">TOTAL YANG HARUS DIBAYAR</span>
+                                <h2 class="fw-bold text-primary m-0 mt-1 font-monospace">{{ fmt(cartStore.grandTotal) }}</h2>
+                            </div>
+
+                            <!-- Payment Details -->
+                            <div class="mb-2">
+                                <label class="form-label fw-semibold small m-0 mb-1"
+                                    >Metode Pembayaran</label
+                                >
+                                <div class="d-flex gap-1">
                                     <button
-                                        class="btn btn-outline-success btn-sm w-100 fw-semibold d-flex align-items-center justify-content-center"
-                                        style="
-                                            height: 32px;
-                                            font-size: 12.5px;
-                                            padding: 0;
+                                        v-for="method in [
+                                            'cash',
+                                            'transfer',
+                                            'qris',
+                                            'e-wallet',
+                                        ]"
+                                        :key="method"
+                                        class="btn btn-sm py-1.5 flex-fill"
+                                        :class="
+                                            cartStore.paymentMethod === method
+                                                ? 'btn-primary'
+                                                : 'btn-outline-primary'
                                         "
-                                        @click="setQuickCash('pas')"
+                                        @click="cartStore.setPaymentMethod(method)"
                                     >
-                                        Uang Pas
+                                        {{ method.toUpperCase() }}
                                     </button>
                                 </div>
                             </div>
-                            <!-- Quick cash buttons -->
-                            <div class="d-flex flex-wrap gap-1 mt-2">
-                                <button
-                                    v-for="amt in quickCashAmounts"
-                                    :key="amt"
-                                    class="btn btn-outline-secondary btn-sm flex-fill fw-bold py-1.5 px-2 border-secondary-subtle"
-                                    style="font-size: 12.5px; min-width: 75px"
-                                    @click="setQuickCash(amt)"
-                                >
-                                    {{ fmtNoSymbol(amt) }}
-                                </button>
-                            </div>
-                            <!-- Change feedback -->
+                            <!-- Cash Input Panel -->
                             <div
-                                class="mt-2 p-2 bg-success bg-opacity-10 border border-success rounded text-success d-flex justify-content-between align-items-center py-1"
+                                v-if="cartStore.paymentMethod === 'cash'"
+                                class="mb-2 pos-compact-inputs"
                             >
-                                <span class="small fw-semibold"
-                                    >Kembalian:</span
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-6">
+                                        <BaseInput
+                                            label="Jumlah Bayar (Rp)"
+                                            type="number"
+                                            size="sm"
+                                            :model-value="cartStore.amountPaid"
+                                            @update:model-value="
+                                                cartStore.setAmountPaid($event)
+                                            "
+                                            class="mb-0"
+                                        />
+                                    </div>
+                                    <div class="col-6">
+                                        <button
+                                            class="btn btn-outline-success btn-sm w-100 fw-semibold d-flex align-items-center justify-content-center"
+                                            style="
+                                                height: 32px;
+                                                font-size: 12.5px;
+                                                padding: 0;
+                                            "
+                                            @click="setQuickCash('pas')"
+                                        >
+                                            Uang Pas
+                                        </button>
+                                    </div>
+                                </div>
+                                <!-- Quick cash buttons -->
+                                <div class="d-flex flex-wrap gap-1 mt-2">
+                                    <button
+                                        v-for="amt in quickCashAmounts"
+                                        :key="amt"
+                                        class="btn btn-outline-secondary btn-sm flex-fill fw-bold py-1.5 px-2 border-secondary-subtle"
+                                        style="font-size: 12.5px; min-width: 75px"
+                                        @click="setQuickCash(amt)"
+                                    >
+                                        {{ fmtNoSymbol(amt) }}
+                                    </button>
+                                </div>
+                                <!-- Change feedback -->
+                                <div
+                                    class="mt-2.5 p-2 bg-success bg-opacity-10 border border-success rounded text-success d-flex justify-content-between align-items-center py-1.5"
                                 >
-                                <span class="fw-bold fs-6">{{
-                                    fmt(cartStore.changeAmount)
-                                }}</span>
+                                    <span class="small fw-semibold"
+                                        >Kembalian:</span
+                                    >
+                                    <span class="fw-bold fs-6">{{
+                                        fmt(cartStore.changeAmount)
+                                    }}</span>
+                                </div>
                             </div>
-                        </div>
-                        <!-- Checkout Action Buttons -->
-                        <div class="row g-2 mt-3">
-                            <div class="col-4">
-                                <BaseButton
-                                    variant="outline-danger"
-                                    block
-                                    title="Kosongkan Keranjang (F7)"
-                                    @click="confirmClearCart"
-                                >
-                                    Reset
-                                </BaseButton>
-                            </div>
-                            <div class="col-8">
-                                <BaseButton
-                                    variant="success"
-                                    block
-                                    :loading="checkoutForm.processing"
-                                    title="Bayar & Checkout (F4)"
-                                    @click="processCheckout"
-                                >
-                                    💵 Proses Pembayaran (F4)
-                                </BaseButton>
+                            <!-- Checkout Action Buttons -->
+                            <div class="row g-2 mt-3">
+                                <div class="col-4">
+                                    <BaseButton
+                                        variant="outline-secondary"
+                                        block
+                                        title="Kembali ke Detail Keranjang"
+                                        @click="currentStep = 1"
+                                    >
+                                        ← Kembali
+                                    </BaseButton>
+                                </div>
+                                <div class="col-8">
+                                    <BaseButton
+                                        variant="success"
+                                        block
+                                        :loading="checkoutForm.processing"
+                                        title="Bayar & Checkout (F4)"
+                                        @click="processCheckout"
+                                    >
+                                        💵 Proses Pembayaran (F4)
+                                    </BaseButton>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+        </div>
+        </div>
         </div>
         <!-- Modal Scan Barcode via Kamera Device -->
         <BaseModal
@@ -1806,35 +2075,59 @@ const fmtNoSymbol = (v) =>
             <div class="p-1">
                 <!-- Dropdown pemilih kamera apabila terdeteksi lebih dari 1 kamera pada device -->
                 <div v-if="cameraDevices.length > 1" class="mb-3">
-                    <label class="form-label fw-semibold small text-secondary">Pilih Kamera</label>
-                    <select v-model="activeCameraId" class="form-select form-select-sm" @change="handleCameraChange">
-                        <option v-for="device in cameraDevices" :key="device.id" :value="device.id">
-                            {{ device.label || `Kamera ${cameraDevices.indexOf(device) + 1}` }}
+                    <label class="form-label fw-semibold small text-secondary"
+                        >Pilih Kamera</label
+                    >
+                    <select
+                        v-model="activeCameraId"
+                        class="form-select form-select-sm"
+                        @change="handleCameraChange"
+                    >
+                        <option
+                            v-for="device in cameraDevices"
+                            :key="device.id"
+                            :value="device.id"
+                        >
+                            {{
+                                device.label ||
+                                `Kamera ${cameraDevices.indexOf(device) + 1}`
+                            }}
                         </option>
                     </select>
                 </div>
-                
+
                 <!-- Frame visual pembidik barcode berdesain futuristik premium -->
-                <div class="position-relative bg-dark rounded-4 overflow-hidden border border-secondary border-opacity-25 shadow-lg" style="aspect-ratio: 4/3; max-width: 480px; margin: 0 auto;">
+                <div
+                    class="position-relative bg-dark rounded-4 overflow-hidden border border-secondary border-opacity-25 shadow-lg"
+                    style="aspect-ratio: 4/3; max-width: 480px; margin: 0 auto"
+                >
                     <!-- Elemen target yang akan disisipi streaming video kamera oleh library html5-qrcode -->
                     <div id="camera-scanner-preview" class="w-100 h-100"></div>
-                    
+
                     <!-- Garis Laser Sensor Merah Berkedip Naik Turun (Looping Animation) -->
                     <div class="scanner-laser-line"></div>
-                    
+
                     <!-- Sisi Siku Target Kotak Bidik Hijau (Target Corners CSS Overlay) -->
                     <div class="scanner-corner top-left"></div>
                     <div class="scanner-corner top-right"></div>
                     <div class="scanner-corner bottom-left"></div>
                     <div class="scanner-corner bottom-right"></div>
                 </div>
-                
+
                 <div class="text-center mt-3 bg-light p-2.5 rounded-3 border">
-                    <small class="text-secondary d-block fw-semibold" style="font-size: 12px;">
-                        Posisikan garis barcode produk agar sejajar lurus tepat di dalam area pemindaian.
+                    <small
+                        class="text-secondary d-block fw-semibold"
+                        style="font-size: 12px"
+                    >
+                        Posisikan garis barcode produk agar sejajar lurus tepat
+                        di dalam area pemindaian.
                     </small>
-                    <small class="text-success fw-bold mt-1.5 d-flex align-items-center justify-content-center gap-1.5" style="font-size: 11px;">
-                        <span>🔊</span> Umpan balik bunyi beep audio aktif otomatis jika barcode berhasil ter-scan!
+                    <small
+                        class="text-success fw-bold mt-1.5 d-flex align-items-center justify-content-center gap-1.5"
+                        style="font-size: 11px"
+                    >
+                        <span>🔊</span> Umpan balik bunyi beep audio aktif
+                        otomatis jika barcode berhasil ter-scan!
                     </small>
                 </div>
             </div>
@@ -1902,7 +2195,13 @@ const fmtNoSymbol = (v) =>
             >
                 <div
                     id="thermal-receipt-body"
-                    style="font-family: 'Courier New', Courier, monospace; width: 300px; font-size: 12px; color: #000;"
+                    style="
+                        font-family:
+                            &quot;Courier New&quot;, Courier, monospace;
+                        width: 300px;
+                        font-size: 12px;
+                        color: #000;
+                    "
                 >
                     <div class="text-center">
                         <h4 style="margin: 0 0 5px 0; font-weight: bold">
@@ -2027,7 +2326,9 @@ const fmtNoSymbol = (v) =>
     width: 100%;
     height: 3.5px;
     background: linear-gradient(to right, transparent, #10b981, transparent);
-    box-shadow: 0 0 10px #10b981, 0 0 20px #10b981;
+    box-shadow:
+        0 0 10px #10b981,
+        0 0 20px #10b981;
     z-index: 5;
     animation: scanLineAnimation 2.2s infinite ease-in-out;
 }
@@ -2040,23 +2341,62 @@ const fmtNoSymbol = (v) =>
     border: 3.5px solid #10b981;
     z-index: 6;
 }
-.scanner-corner.top-left { top: 16px; left: 16px; border-right: none; border-bottom: none; border-radius: 6px 0 0 0; }
-.scanner-corner.top-right { top: 16px; right: 16px; border-left: none; border-bottom: none; border-radius: 0 6px 0 0; }
-.scanner-corner.bottom-left { bottom: 16px; left: 16px; border-right: none; border-top: none; border-radius: 0 0 0 6px; }
-.scanner-corner.bottom-right { bottom: 16px; right: 16px; border-left: none; border-top: none; border-radius: 0 0 6px 0; }
+.scanner-corner.top-left {
+    top: 16px;
+    left: 16px;
+    border-right: none;
+    border-bottom: none;
+    border-radius: 6px 0 0 0;
+}
+.scanner-corner.top-right {
+    top: 16px;
+    right: 16px;
+    border-left: none;
+    border-bottom: none;
+    border-radius: 0 6px 0 0;
+}
+.scanner-corner.bottom-left {
+    bottom: 16px;
+    left: 16px;
+    border-right: none;
+    border-top: none;
+    border-radius: 0 0 0 6px;
+}
+.scanner-corner.bottom-right {
+    bottom: 16px;
+    right: 16px;
+    border-left: none;
+    border-top: none;
+    border-radius: 0 0 6px 0;
+}
 
 /* Animasi sensor gerak laser pemindai */
 @keyframes scanLineAnimation {
-    0% { top: 10%; }
-    50% { top: 90%; }
-    100% { top: 10%; }
+    0% {
+        top: 10%;
+    }
+    50% {
+        top: 90%;
+    }
+    100% {
+        top: 10%;
+    }
 }
 
 /* Animasi berkedip lembut untuk indikator status fisik (Pulsing Dot) */
 @keyframes pulse {
-    0% { transform: scale(0.85); opacity: 0.75; }
-    50% { transform: scale(1.15); opacity: 1; }
-    100% { transform: scale(0.85); opacity: 0.75; }
+    0% {
+        transform: scale(0.85);
+        opacity: 0.75;
+    }
+    50% {
+        transform: scale(1.15);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(0.85);
+        opacity: 0.75;
+    }
 }
 
 .pulse-animation {
